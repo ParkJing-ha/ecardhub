@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+
+ecard_venv/
+venv/
+.venv/
+
+.env
+
+.git/
+.gitignore
+
+db.sqlite3
+
+.pytest_cache/

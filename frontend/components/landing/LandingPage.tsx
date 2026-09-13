@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { BrandLogo } from "@/components/BrandLogo";
+import { useAppPreferences } from "../AppPreferencesProvider";
 import { CATEGORIES, TEMPLATES } from "../../utils/mockData";
 
 // Floating card preview for the hero
@@ -204,7 +206,7 @@ function Step({
       <div
         className="w-14 h-14 rounded-full flex items-center justify-center text-2xl mb-4 relative z-10"
         style={{
-          background: "var(--primary)",
+          background: "var(--brand-surface)",
           border: "2px solid rgba(196,164,90,0.3)",
         }}
       >
@@ -225,7 +227,7 @@ function Step({
           />
           <div
             style={{
-              color: "var(--accent)",
+              color: "var(--accent-text)",
               fontSize: "1rem",
               marginLeft: "4px",
             }}
@@ -236,7 +238,7 @@ function Step({
       )}
       <div
         className="font-mono-label text-xs mb-2"
-        style={{ color: "var(--accent)" }}
+        style={{ color: "var(--accent-text)" }}
       >
         STEP {number.toString().padStart(2, "0")}
       </div>
@@ -299,7 +301,10 @@ function PricingCard({
           />
           <span
             className="absolute top-5 right-5 font-mono-label text-xs px-2.5 py-1 rounded-full"
-            style={{ background: "var(--accent)", color: "var(--primary)" }}
+            style={{
+              background: "var(--accent)",
+              color: "var(--accent-foreground)",
+            }}
           >
             POPULAR
           </span>
@@ -348,7 +353,7 @@ function PricingCard({
           >
             <span
               style={{
-                color: "var(--accent)",
+                color: "var(--accent-text)",
                 flexShrink: 0,
                 marginTop: "1px",
               }}
@@ -365,7 +370,9 @@ function PricingCard({
         style={{
           display: "block",
           background: highlighted ? "var(--accent)" : "transparent",
-          color: highlighted ? "var(--primary)" : "var(--foreground)",
+          color: highlighted
+            ? "var(--accent-foreground)"
+            : "var(--foreground)",
           border: highlighted ? "none" : "1px solid var(--border)",
           fontFamily: "'Outfit', sans-serif",
           textAlign: "center",
@@ -374,7 +381,7 @@ function PricingCard({
         onMouseEnter={(e) => {
           if (!highlighted) {
             e.currentTarget.style.borderColor = "var(--accent)";
-            e.currentTarget.style.color = "var(--accent)";
+            e.currentTarget.style.color = "var(--accent-text)";
           }
         }}
         onMouseLeave={(e) => {
@@ -391,12 +398,20 @@ function PricingCard({
 }
 
 export default function LandingPage() {
-  const registerHref = "/auth?mode=register";
+  const { language, resolvedTheme, setLanguage, setTheme, t } =
+    useAppPreferences();
+  const registerHref = "/auth?mode=register&next=/dashboard?view=create-event";
   const loginHref = "/auth?mode=login";
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const navLinks = ["Home", "Templates", "Gallery", "Pricing", "About"];
+  const navLinks = [
+    { id: "home", label: t(language, "nav", "home") },
+    { id: "templates", label: t(language, "nav", "templates") },
+    { id: "gallery", label: t(language, "nav", "gallery") },
+    { id: "pricing", label: t(language, "nav", "pricing") },
+    { id: "about", label: t(language, "nav", "about") },
+  ];
 
   const popularCats = [
     CATEGORIES.find((c) => c.id === "graduation")!,
@@ -475,28 +490,23 @@ export default function LandingPage() {
       <header
         className="fixed top-0 left-0 right-0 z-50"
         style={{
-          backgroundColor: "var(--primary)",
+          backgroundColor: "var(--brand-surface)",
           borderBottom: "1px solid rgba(196,164,90,0.18)",
           boxShadow: "0 10px 30px rgba(15,18,32,0.22)",
         }}
       >
         <div
           className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between"
-          style={{ backgroundColor: "var(--primary)" }}
+          style={{ backgroundColor: "var(--brand-surface)" }}
         >
           {/* Logo */}
           <div className="flex items-center gap-3">
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-base font-bold"
-              style={{ background: "var(--accent)", color: "var(--primary)" }}
-            >
-              ✉
-            </div>
+            <BrandLogo size={34} />
             <span
               className="font-display text-xl tracking-wide"
-              style={{ color: "var(--accent)" }}
+              style={{ color: "var(--accent-text)" }}
             >
-              Invitely
+              {t(language, "common", "appName")}
             </span>
           </div>
 
@@ -504,8 +514,8 @@ export default function LandingPage() {
           <nav className="hidden md:flex items-center gap-1">
             {navLinks.map((link) => (
               <a
-                key={link}
-                href={`#${link.toLowerCase()}`}
+                key={link.id}
+                href={`#${link.id}`}
                 className="px-4 py-2 rounded-lg text-sm font-medium"
                 style={{
                   color: "rgba(247,244,239,0.7)",
@@ -513,19 +523,71 @@ export default function LandingPage() {
                   fontFamily: "'Outfit', sans-serif",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.color = "var(--accent)";
+                  e.currentTarget.style.color = "var(--accent-text)";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.color = "rgba(247,244,239,0.7)";
                 }}
               >
-                {link}
+                {link.label}
               </a>
             ))}
           </nav>
 
           {/* Right: Login + CTA */}
           <div className="flex items-center gap-3">
+            <div
+              className="hidden sm:flex"
+              style={{
+                alignItems: "center",
+                gap: 4,
+                padding: 3,
+                border: "1px solid rgba(196,164,90,0.35)",
+                borderRadius: 8,
+              }}
+            >
+              {(["en", "sw"] as const).map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => setLanguage(item)}
+                  style={{
+                    minWidth: 36,
+                    minHeight: 34,
+                    border: 0,
+                    borderRadius: 6,
+                    background: language === item ? "var(--accent)" : "transparent",
+                    color:
+                      language === item
+                        ? "var(--accent-foreground)"
+                        : "rgba(247,244,239,0.75)",
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}
+                >
+                  {item.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 8,
+                border: "1px solid rgba(196,164,90,0.35)",
+                background: "transparent",
+                color: "var(--accent-text)",
+              }}
+              aria-label={
+                resolvedTheme === "dark"
+                  ? t(language, "common", "lightMode")
+                  : t(language, "common", "darkMode")
+              }
+            >
+              {resolvedTheme === "dark" ? "☀" : "☾"}
+            </button>
             <Link
               href={loginHref}
               className="hidden md:block px-5 py-2 rounded-lg text-sm font-medium"
@@ -537,31 +599,35 @@ export default function LandingPage() {
                 textDecoration: "none",
               }}
             >
-              Login
+              {t(language, "common", "signIn")}
             </Link>
             <Link
               href={registerHref}
-              className="px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-semibold"
+              className="hidden md:inline-flex px-5 py-2 rounded-lg text-sm font-semibold"
               style={{
                 background: "var(--accent)",
-                color: "var(--primary)",
+                color: "var(--accent-foreground)",
                 fontFamily: "'Outfit', sans-serif",
                 textDecoration: "none",
               }}
             >
-              Start Free
+              {t(language, "common", "startFree")}
             </Link>
             {/* Mobile menu toggle */}
             <button
               type="button"
-              aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+              aria-label={
+                mobileMenuOpen
+                  ? t(language, "common", "closeMenu")
+                  : t(language, "common", "openMenu")
+              }
               aria-expanded={mobileMenuOpen}
               className="md:hidden p-2"
               onClick={() => {
                 setMobileMenuOpen((o) => !o);
               }}
               style={{
-                color: "var(--accent)",
+                color: "var(--accent-text)",
                 background: "none",
                 border: "none",
                 cursor: "pointer",
@@ -579,15 +645,15 @@ export default function LandingPage() {
           <div
             className="absolute top-full left-0 right-0 md:hidden px-6 py-5 flex flex-col gap-2"
             style={{
-              background: "var(--primary)",
+              background: "var(--brand-surface)",
               borderTop: "1px solid rgba(196,164,90,0.15)",
               boxShadow: "0 18px 35px rgba(0,0,0,0.18)",
             }}
           >
             {navLinks.map((link) => (
               <a
-                key={link}
-                href={`#${link.toLowerCase()}`}
+                key={link.id}
+                href={`#${link.id}`}
                 className="py-2.5 text-sm font-medium"
                 style={{
                   color: "rgba(247,244,239,0.75)",
@@ -596,7 +662,7 @@ export default function LandingPage() {
                 }}
                 onClick={() => setMobileMenuOpen(false)}
               >
-                {link}
+                {link.label}
               </a>
             ))}
             <Link
@@ -604,14 +670,36 @@ export default function LandingPage() {
               onClick={() => setMobileMenuOpen(false)}
               className="py-2.5 text-sm font-medium text-left"
               style={{
-                color: "var(--accent)",
+                color: "var(--accent-text)",
                 background: "none",
                 fontFamily: "'Outfit', sans-serif",
                 textDecoration: "none",
               }}
             >
-              Login
+              {t(language, "common", "signIn")}
             </Link>
+            <div style={{ display: "flex", gap: 8, paddingTop: 8 }}>
+              {(["en", "sw"] as const).map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => setLanguage(item)}
+                  style={{
+                    flex: 1,
+                    minHeight: 44,
+                    borderRadius: 8,
+                    border: "1px solid rgba(196,164,90,0.35)",
+                    background: language === item ? "var(--accent)" : "transparent",
+                    color:
+                      language === item
+                        ? "var(--accent-foreground)"
+                        : "rgba(247,244,239,0.8)",
+                  }}
+                >
+                  {item.toUpperCase()}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </header>
@@ -626,7 +714,7 @@ export default function LandingPage() {
         <div className="absolute inset-0 flex">
           <div
             className="w-full lg:w-1/2"
-            style={{ background: "var(--primary)" }}
+            style={{ background: "var(--brand-surface)" }}
           />
           <div
             className="hidden lg:block w-1/2"
@@ -669,9 +757,9 @@ export default function LandingPage() {
               />
               <span
                 className="font-mono-label text-xs tracking-wide"
-                style={{ color: "var(--accent)" }}
+                style={{ color: "var(--accent-text)" }}
               >
-                128,042 invitations sent · 99.5% uptime
+                {t(language, "landing", "eyebrow")}
               </span>
             </div>
 
@@ -679,24 +767,17 @@ export default function LandingPage() {
               className="font-display leading-tight mb-6"
               style={{
                 fontSize: "clamp(2.6rem, 6vw, 4.5rem)",
-                color: "var(--primary-foreground)",
+                color: "var(--brand-surface-foreground)",
               }}
             >
-              Create Beautiful
-              <br />
-              Digital{" "}
-              <em style={{ color: "var(--accent)", fontStyle: "italic" }}>
-                Invitations
-              </em>
+              {t(language, "landing", "headline")}
             </h1>
 
             <p
               className="text-base mb-8 max-w-lg"
               style={{ color: "rgba(247,244,239,0.65)", lineHeight: 1.8 }}
             >
-              Design stunning e-cards for every occasion — graduations,
-              weddings, birthdays, and more. Share instantly via Email,
-              WhatsApp, or SMS and track RSVPs in real time.
+              {t(language, "landing", "body")}
             </p>
 
             <div className="flex gap-4 flex-wrap mb-10">
@@ -705,12 +786,12 @@ export default function LandingPage() {
                 className="px-7 py-3.5 rounded-xl text-base font-semibold flex items-center gap-2"
                 style={{
                   background: "var(--accent)",
-                  color: "var(--primary)",
+                  color: "var(--accent-foreground)",
                   fontFamily: "'Outfit', sans-serif",
                   textDecoration: "none",
                 }}
               >
-                Start Free
+                {t(language, "landing", "primaryCta")}
                 <span>→</span>
               </Link>
               <Link
@@ -724,17 +805,17 @@ export default function LandingPage() {
                   textDecoration: "none",
                 }}
               >
-                Sign In
+                {t(language, "landing", "secondaryCta")}
               </Link>
             </div>
 
             {/* Trust badges */}
             <div className="flex items-center gap-5 flex-wrap">
               {[
-                { icon: "⚡", text: "Ready in 2 min" },
-                { icon: "📱", text: "Mobile + Email + SMS" },
-                { icon: "🔐", text: "Secure & Private" },
-                { icon: "🇹🇿", text: "EN + Swahili" },
+                { icon: "⚡", text: t(language, "landing", "ready") },
+                { icon: "📱", text: t(language, "landing", "channels") },
+                { icon: "🔐", text: t(language, "landing", "secure") },
+                { icon: "TZ", text: t(language, "landing", "localized") },
               ].map(({ icon, text }) => (
                 <div key={text} className="flex items-center gap-2">
                   <span className="text-base">{icon}</span>
@@ -758,7 +839,7 @@ export default function LandingPage() {
               className="font-mono-label text-xs tracking-widest uppercase mb-2"
               style={{ color: "var(--muted-foreground)" }}
             >
-              Beautiful Preview
+              {t(language, "landing", "preview")}
             </div>
             <HeroCardPreview />
           </div>
@@ -795,7 +876,7 @@ export default function LandingPage() {
           <div className="text-center mb-14">
             <div
               className="font-mono-label text-xs tracking-widest mb-3 uppercase"
-              style={{ color: "var(--accent)" }}
+              style={{ color: "var(--accent-text)" }}
             >
               Occasions
             </div>
@@ -903,7 +984,7 @@ export default function LandingPage() {
                     </div>
                     <span
                       className="text-sm transition-transform group-hover:translate-x-1"
-                      style={{ color: "var(--accent)" }}
+                      style={{ color: "var(--accent-text)" }}
                     >
                       →
                     </span>
@@ -928,7 +1009,7 @@ export default function LandingPage() {
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.borderColor = "var(--accent)";
-                  e.currentTarget.style.color = "var(--accent)";
+                  e.currentTarget.style.color = "var(--accent-text)";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.borderColor = "var(--border)";
@@ -952,7 +1033,7 @@ export default function LandingPage() {
           <div className="text-center mb-16">
             <div
               className="font-mono-label text-xs tracking-widest mb-3 uppercase"
-              style={{ color: "var(--accent)" }}
+              style={{ color: "var(--accent-text)" }}
             >
               Process
             </div>
@@ -1001,8 +1082,8 @@ export default function LandingPage() {
               href={registerHref}
               className="px-8 py-4 rounded-xl text-base font-semibold"
               style={{
-                background: "var(--primary)",
-                color: "var(--primary-foreground)",
+                background: "var(--brand-surface)",
+                color: "var(--brand-surface-foreground)",
                 fontFamily: "'Outfit', sans-serif",
                 textDecoration: "none",
                 display: "inline-block",
@@ -1021,7 +1102,7 @@ export default function LandingPage() {
       </section>
 
       {/* ─── STATS STRIP ─── */}
-      <section style={{ background: "var(--primary)", padding: "56px 0" }}>
+      <section style={{ background: "var(--brand-surface)", padding: "56px 0" }}>
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
             {[
@@ -1033,7 +1114,7 @@ export default function LandingPage() {
               <div key={label}>
                 <div
                   className="font-display mb-2"
-                  style={{ fontSize: "2.5rem", color: "var(--accent)" }}
+                  style={{ fontSize: "2.5rem", color: "var(--accent-text)" }}
                 >
                   {value}
                 </div>
@@ -1062,7 +1143,7 @@ export default function LandingPage() {
           <div className="text-center mb-14">
             <div
               className="font-mono-label text-xs tracking-widest mb-3 uppercase"
-              style={{ color: "var(--accent)" }}
+              style={{ color: "var(--accent-text)" }}
             >
               Pricing
             </div>
@@ -1125,7 +1206,7 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto px-6 text-center">
           <div
             className="font-mono-label text-xs tracking-widest mb-3 uppercase"
-            style={{ color: "var(--accent)" }}
+            style={{ color: "var(--accent-text)" }}
           >
             About
           </div>
@@ -1135,13 +1216,13 @@ export default function LandingPage() {
           >
             Built for every occasion,
             <br />
-            <em style={{ color: "var(--accent)" }}>everywhere</em>
+            <em style={{ color: "var(--accent-text)" }}>everywhere</em>
           </h2>
           <p
             className="text-base max-w-2xl mx-auto mb-10"
             style={{ color: "var(--muted-foreground)", lineHeight: 1.85 }}
           >
-            Invitely was designed to make beautiful digital invitations
+            EcardHub was designed to make beautiful digital invitations
             accessible to everyone — from families celebrating milestones to
             corporations hosting conferences. With full Swahili localization,
             mobile money payment support, and offline-friendly SMS delivery, we
@@ -1171,11 +1252,11 @@ export default function LandingPage() {
       </section>
 
       {/* ─── FOOTER CTA ─── */}
-      <section style={{ background: "var(--primary)", padding: "80px 0" }}>
+      <section style={{ background: "var(--brand-surface)", padding: "80px 0" }}>
         <div className="max-w-3xl mx-auto px-6 text-center">
           <div
             className="font-display text-4xl md:text-5xl mb-5 leading-tight"
-            style={{ color: "var(--primary-foreground)" }}
+            style={{ color: "var(--brand-surface-foreground)" }}
           >
             Ready to create your first invitation?
           </div>
@@ -1191,7 +1272,7 @@ export default function LandingPage() {
               className="px-8 py-4 rounded-xl text-base font-semibold"
               style={{
                 background: "var(--accent)",
-                color: "var(--primary)",
+                color: "var(--accent-foreground)",
                 fontFamily: "'Outfit', sans-serif",
                 textDecoration: "none",
               }}
@@ -1218,21 +1299,16 @@ export default function LandingPage() {
       {/* ─── FOOTER ─── */}
       <footer
         style={{
-          background: "var(--primary)",
+          background: "var(--brand-surface)",
           borderTop: "1px solid rgba(196,164,90,0.1)",
           padding: "32px 0",
         }}
       >
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <div
-              className="w-6 h-6 rounded flex items-center justify-center text-xs"
-              style={{ background: "var(--accent)", color: "var(--primary)" }}
-            >
-              ✉
-            </div>
-            <span className="font-display" style={{ color: "var(--accent)" }}>
-              Invitely
+            <BrandLogo size={28} />
+            <span className="font-display" style={{ color: "var(--accent-text)" }}>
+              {t(language, "common", "appName")}
             </span>
           </div>
           <div className="flex gap-5">
@@ -1252,7 +1328,7 @@ export default function LandingPage() {
                   fontFamily: "'Outfit', sans-serif",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.color = "var(--accent)";
+                  e.currentTarget.style.color = "var(--accent-text)";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.color = "rgba(247,244,239,0.4)";
@@ -1266,7 +1342,7 @@ export default function LandingPage() {
             className="font-mono-label text-xs"
             style={{ color: "rgba(247,244,239,0.25)" }}
           >
-            © 2026 Invitely · 99.5% Uptime SLA
+            © 2026 {t(language, "common", "appName")} · 99.5% Uptime SLA
           </div>
         </div>
       </footer>

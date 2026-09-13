@@ -1,14 +1,33 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
-import { deleteSession } from "../../../../lib/auth-db";
-import { sessionCookieName, sessionCookieOptions } from "../../../../lib/session";
+import { djangoFetch } from "../../../../lib/django-api";
+import {
+  clearAuthCookies,
+  getRefreshToken,
+} from "../../../../lib/auth-cookies";
 
-export async function POST(request: NextRequest) {
-  await deleteSession(request.cookies.get(sessionCookieName)?.value);
-  const response = NextResponse.json({ ok: true });
-  response.cookies.set(sessionCookieName, "", {
-    ...sessionCookieOptions(new Date(0)),
-    maxAge: 0,
-  });
-  return response;
+export async function POST() {
+  try {
+    const refresh = await getRefreshToken();
+
+    if (refresh) {
+      await djangoFetch("/api/auth/logout/", {
+        method: "POST",
+        body: JSON.stringify({
+          refresh,
+        }),
+      });
+    }
+
+    await clearAuthCookies();
+
+    return NextResponse.json({
+      message: "Logout successful.",
+    });
+  } catch {
+    await clearAuthCookies();
+
+    return NextResponse.json({
+      message: "Logout successful.",
+    });
+  }
 }

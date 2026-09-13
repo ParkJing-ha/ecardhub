@@ -18,3 +18,11 @@ export type Template = {
   uses: number;
   premium: boolean;
 };
+
+export type PublicUser = {
+  id: number;
+  full_name: string;
+  email: string;
+  phone_number: string;
+  role: "super_admin" | "event_host" | "usher";
+};

@@ -1,10 +1,32 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "../../../../lib/session";
+import { authenticatedDjangoFetch } from "../../../../lib/authenticated-django-api";
 
 export async function GET() {
-  const user = await getCurrentUser();
-  if (!user) {
-    return NextResponse.json({ user: null }, { status: 401 });
+  try {
+    const response = await authenticatedDjangoFetch("/api/auth/me/", {
+      method: "GET",
+    });
+
+    if (!response) {
+      return NextResponse.json(
+        { user: null },
+        { status: 401 },
+      );
+    }
+
+    const data = await response.json();
+
+    return NextResponse.json(data, {
+      status: response.status,
+    });
+  } catch {
+    return NextResponse.json(
+      {
+        error: "Unable to connect to authentication server.",
+      },
+      {
+        status: 503,
+      },
+    );
   }
-  return NextResponse.json({ user });
 }

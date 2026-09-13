@@ -9,9 +9,5 @@ export default async function DashboardPage() {
     redirect("/auth");
   }
 
-  return (
-    <div className="dark" style={{ minHeight: '100vh' }}>
-      <DashboardApp user={user} />
-    </div>
-  );
+  return <DashboardApp user={user} />;
 }

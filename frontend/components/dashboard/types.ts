@@ -2,11 +2,14 @@ export type View =
   | "dashboard"
   | "events"
   | "create-event"
+  | "templates"
   | "guests"
   | "send"
   | "qr-verify"
   | "wallet"
-  | "contributions";
+  | "contributions"
+  | "profile"
+  | "settings";
 
 export type EventCategory =
   | "Wedding"
@@ -45,4 +48,34 @@ export interface Event {
   guestCount: number;
   sentCount: number;
   rsvpCount: number;
+}
+
+export type EventStatus = "draft" | "active" | "completed" | "cancelled";
+
+export type EventType =
+  | "wedding"
+  | "graduation"
+  | "birthday"
+  | "kitchen_party"
+  | "holiday"
+  | "anniversary"
+  | "send_off"
+  | "custom_ceremony";
+
+export interface ApiEvent {
+  id: number;
+  title: string;
+  event_type: EventType;
+  host_family_name: string;
+  event_date: string;
+  event_time: string | null;
+  venue: string;
+  rsvp_deadline: string | null;
+  rsvp_reply_phone: string;
+  card_message: string;
+  dress_code_colors: string[];
+  description: string;
+  status: EventStatus;
+  created_at: string;
+  updated_at: string;
 }

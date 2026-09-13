@@ -1,117 +1,308 @@
-import { useState } from "react";
-import type { Guest } from "../types";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  generateInvitations,
+  getGuests,
+  getInvitations,
+  getTemplates,
+  sendInvitations,
+  type Guest,
+  type Invitation,
+} from "@/lib/data";
+import { allTemplates } from "@/lib/templates";
+import { DISPATCH_CHANNELS } from "@/lib/constants";
+import type { Event as DashboardEvent } from "../types";
 import { Icon } from "../icons";
 import { useIsMobile } from "../hooks";
 import { SectionHeader } from "../ui";
 import { packages as PACKAGES } from "../data";
 
-export function SendInvitesView({ guests }: { guests: Guest[] }) {
-  const isMobile = useIsMobile()
-  const [pkg, setPkg] = useState<string | null>(null)
-  const [audience, setAudience] = useState<'all' | 'pending' | 'accepted'>('all')
-  const [sending, setSending] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const [done, setDone] = useState(false)
+export function SendInvitesView({ events }: { events: DashboardEvent[] }) {
+  const isMobile = useIsMobile();
+  const [selectedEventId, setSelectedEventId] = useState(events[0]?.id ?? "");
+  const [pkg, setPkg] = useState<string | null>(null);
+  const [channel, setChannel] = useState(DISPATCH_CHANNELS[0]);
+  const [audience, setAudience] = useState<"all" | "pending" | "accepted">("all");
+  const [guests, setGuests] = useState<Guest[]>([]);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [message, setMessage] = useState("");
 
-  const target = audience === 'all' ? guests : audience === 'pending' ? guests.filter(g => g.rsvp === 'Pending') : guests.filter(g => g.rsvp === 'Accepted')
-  const selectedPkg = PACKAGES.find(p => p.id === pkg)
-  const total = target.length * (selectedPkg?.price || 0)
+  useEffect(() => {
+    if (!selectedEventId && events[0]?.id) {
+      queueMicrotask(() => setSelectedEventId(events[0].id));
+    }
+  }, [events, selectedEventId]);
 
-  const handleSend = () => {
-    setSending(true)
-    let p = 0
-    const interval = setInterval(() => {
-      p += Math.random() * 18
-      if (p >= 100) { p = 100; clearInterval(interval); setTimeout(() => setDone(true), 400) }
-      setProgress(Math.min(p, 100))
-    }, 180)
-  }
+  const loadData = useCallback(async () => {
+    if (!selectedEventId) {
+      setGuests([]);
+      setInvitations([]);
+      return;
+    }
 
-  if (done) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400, textAlign: 'center' }}>
-        <div style={{ fontSize: 60, marginBottom: 16 }}>📨</div>
-        <h2 style={{ fontFamily: 'DM Serif Display, serif', fontSize: 28, color: '#22c55e', margin: '0 0 10px' }}>Invitations Dispatched!</h2>
-        <p style={{ color: '#8b82a0', fontSize: 15 }}>{target.length} invitations queued for delivery via {selectedPkg?.name}.</p>
-        <button className="btn-gold" style={{ marginTop: 24, padding: '12px 28px', borderRadius: 10, fontSize: 15 }} onClick={() => { setDone(false); setSending(false); setProgress(0); setPkg(null) }}>
-          Send More
-        </button>
-      </div>
-    )
-  }
+    try {
+      setLoading(true);
+      setMessage("");
+      const [nextGuests, nextInvitations] = await Promise.all([
+        getGuests(selectedEventId),
+        getInvitations(selectedEventId),
+      ]);
+      setGuests(nextGuests);
+      setInvitations(nextInvitations);
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Unable to load invitations.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedEventId]);
+
+  useEffect(() => {
+    queueMicrotask(loadData);
+  }, [loadData]);
+
+  const selectedPkg = PACKAGES.find((item) => item.id === pkg);
+  const targetGuests = useMemo(() => {
+    if (audience === "pending") {
+      return guests.filter((guest) => guest.rsvp_status === "pending");
+    }
+    if (audience === "accepted") {
+      return guests.filter((guest) => guest.rsvp_status === "attending");
+    }
+    return guests;
+  }, [audience, guests]);
+  const total = targetGuests.length * (selectedPkg?.price || 0);
+
+  const handleSend = async () => {
+    if (!selectedEventId || !selectedPkg) return;
+
+    setSending(true);
+    setMessage("");
+
+    try {
+      const templates = await getTemplates(selectedEventId);
+      const defaultTemplate = allTemplates(templates)[0];
+      const existingForTarget = invitations.filter((invitation) =>
+        targetGuests.some((guest) => guest.id === invitation.guest_id),
+      );
+      const created = await generateInvitations(
+        selectedEventId,
+        targetGuests,
+        invitations,
+        {
+          event_id: selectedEventId,
+          template_id: defaultTemplate?.id || "preset-0",
+          channel: channel.toLowerCase(),
+          package: selectedPkg.id,
+        },
+      );
+      const dispatchTargets = [...existingForTarget, ...created];
+
+      if (dispatchTargets.length === 0) {
+        setMessage("There are no guests ready for dispatch.");
+        return;
+      }
+
+      await sendInvitations(selectedEventId, dispatchTargets, channel.toLowerCase());
+      setMessage(
+        `Queued ${dispatchTargets.length} invitations via ${channel}. Delivery status is saved in notification history.`,
+      );
+      loadData();
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Unable to send invitations.",
+      );
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <div>
       <SectionHeader title="Send Invitations" />
 
-      {/* Package Selection */}
-      <div style={{ marginBottom: 28 }}>
-        <h3 style={{ fontSize: 14, color: '#8b82a0', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 14px' }}>Distribution Package</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: 12 }}>
-          {PACKAGES.map(p => (
-            <div key={p.id} onClick={() => setPkg(p.id)} style={{ padding: '18px 20px', borderRadius: 12, border: '1.5px solid', borderColor: pkg === p.id ? p.color : 'rgba(201,168,76,0.15)', background: pkg === p.id ? `${p.color}12` : '#17142e', cursor: 'pointer', transition: 'all 0.15s' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <Icon d={p.icon} size={18} stroke={p.color} />
-                <span style={{ fontWeight: 600, fontSize: 14, color: pkg === p.id ? p.color : '#f0ece8' }}>{p.name}</span>
-              </div>
-              <div style={{ fontSize: 12, color: '#8b82a0', marginBottom: 10 }}>{p.desc}</div>
-              <div style={{ fontFamily: 'DM Serif Display, serif', fontSize: 20, color: p.color }}>TZS {p.price}<span style={{ fontSize: 11, color: '#8b82a0', fontFamily: 'Outfit,sans-serif', fontWeight: 400 }}>/card</span></div>
-            </div>
-          ))}
-        </div>
+      <div className="card-base p-4" style={{ marginBottom: 20 }}>
+        <label style={{ display: "grid", gap: 6, maxWidth: 360 }}>
+          <span style={{ color: "var(--muted-foreground)", fontSize: 12, fontWeight: 600 }}>
+            Event
+          </span>
+          <select
+            value={selectedEventId}
+            onChange={(event) => setSelectedEventId(event.target.value)}
+            style={{
+              height: 38,
+              borderRadius: 8,
+              border: "1px solid rgba(201,168,76,0.22)",
+              background: "var(--card)",
+              color: "var(--foreground)",
+              padding: "0 10px",
+            }}
+          >
+            {events.map((event) => (
+              <option key={event.id} value={event.id}>
+                {event.title}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
-      {/* Audience */}
       <div style={{ marginBottom: 28 }}>
-        <h3 style={{ fontSize: 14, color: '#8b82a0', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 14px' }}>Target Audience</h3>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {[
-            { value: 'all' as const, label: `All Guests (${guests.length})` },
-            { value: 'pending' as const, label: `Pending RSVP (${guests.filter(g => g.rsvp === 'Pending').length})` },
-            { value: 'accepted' as const, label: `Accepted Only (${guests.filter(g => g.rsvp === 'Accepted').length})` },
-          ].map(opt => (
-            <button key={opt.value} onClick={() => setAudience(opt.value)} style={{ padding: '9px 18px', borderRadius: 20, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid', borderColor: audience === opt.value ? '#c9a84c' : 'rgba(201,168,76,0.2)', background: audience === opt.value ? 'rgba(201,168,76,0.12)' : 'transparent', color: audience === opt.value ? '#c9a84c' : '#8b82a0', transition: 'all 0.15s' }}>
-              {opt.label}
+        <h3 style={{ fontSize: 14, color: "var(--muted-foreground)", fontWeight: 600, textTransform: "uppercase", margin: "0 0 14px" }}>
+          Distribution Package
+        </h3>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)",
+            gap: 12,
+          }}
+        >
+          {PACKAGES.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setPkg(item.id)}
+              style={{
+                padding: "18px 20px",
+                borderRadius: 8,
+                border: "1.5px solid",
+                borderColor: pkg === item.id ? item.color : "rgba(201,168,76,0.15)",
+                background: pkg === item.id ? `${item.color}12` : "#17142e",
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                <Icon d={item.icon} size={18} stroke={item.color} />
+                <span style={{ fontWeight: 600, fontSize: 14, color: pkg === item.id ? item.color : "var(--foreground)" }}>
+                  {item.name}
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: "var(--muted-foreground)", marginBottom: 10 }}>
+                {item.desc}
+              </div>
+              <div style={{ fontFamily: "DM Serif Display, serif", fontSize: 20, color: item.color }}>
+                TZS {item.price}
+                <span style={{ fontSize: 11, color: "var(--muted-foreground)", fontFamily: "Outfit,sans-serif", fontWeight: 400 }}>
+                  /card
+                </span>
+              </div>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Cost Summary */}
+      <div style={{ marginBottom: 28 }}>
+        <h3 style={{ fontSize: 14, color: "var(--muted-foreground)", fontWeight: 600, textTransform: "uppercase", margin: "0 0 14px" }}>
+          Target Audience
+        </h3>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {[
+            { value: "all" as const, label: `All Guests (${guests.length})` },
+            {
+              value: "pending" as const,
+              label: `Pending RSVP (${guests.filter((guest) => guest.rsvp_status === "pending").length})`,
+            },
+            {
+              value: "accepted" as const,
+              label: `Accepted Only (${guests.filter((guest) => guest.rsvp_status === "attending").length})`,
+            },
+          ].map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setAudience(option.value)}
+              style={{
+                padding: "9px 16px",
+                borderRadius: 8,
+                fontSize: 13,
+                border: "1px solid",
+                borderColor:
+                  audience === option.value ? "#c9a84c" : "rgba(201,168,76,0.2)",
+                background:
+                  audience === option.value ? "rgba(201,168,76,0.12)" : "transparent",
+                color:
+                  audience === option.value
+                    ? "var(--accent-text)"
+                    : "var(--muted-foreground)",
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <label style={{ display: "grid", gap: 6, maxWidth: 260, marginBottom: 24 }}>
+        <span style={{ color: "var(--muted-foreground)", fontSize: 12, fontWeight: 600 }}>
+          Channel
+        </span>
+        <select
+          value={channel}
+          onChange={(event) => setChannel(event.target.value)}
+          style={{
+            height: 38,
+            borderRadius: 8,
+            border: "1px solid rgba(201,168,76,0.22)",
+            background: "var(--card)",
+            color: "var(--foreground)",
+            padding: "0 10px",
+          }}
+        >
+          {DISPATCH_CHANNELS.map((item) => (
+            <option key={item} value={item}>
+              {item}
+            </option>
+          ))}
+        </select>
+      </label>
+
       {pkg && (
         <div className="card-base p-5" style={{ marginBottom: 24, maxWidth: 440 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-            <span style={{ color: '#8b82a0' }}>Cards to send</span>
-            <span style={{ color: '#f0ece8', fontWeight: 600 }}>{target.length}</span>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+            <span style={{ color: "var(--muted-foreground)" }}>Cards to send</span>
+            <span style={{ color: "var(--foreground)", fontWeight: 600 }}>
+              {targetGuests.length}
+            </span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-            <span style={{ color: '#8b82a0' }}>Price per card</span>
-            <span style={{ color: '#f0ece8', fontWeight: 600 }}>TZS {selectedPkg?.price}</span>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+            <span style={{ color: "var(--muted-foreground)" }}>Price per card</span>
+            <span style={{ color: "var(--foreground)", fontWeight: 600 }}>
+              TZS {selectedPkg?.price}
+            </span>
           </div>
-          <div style={{ height: 1, background: 'rgba(201,168,76,0.15)', margin: '10px 0' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: '#f0ece8', fontWeight: 600 }}>Total Cost</span>
-            <span style={{ fontFamily: 'DM Serif Display, serif', fontSize: 22, color: '#c9a84c' }}>TZS {total.toLocaleString()}</span>
+          <div style={{ height: 1, background: "rgba(201,168,76,0.15)", margin: "10px 0" }} />
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ color: "var(--foreground)", fontWeight: 600 }}>Total Cost</span>
+            <span style={{ fontFamily: "DM Serif Display, serif", fontSize: 22, color: "var(--accent-text)" }}>
+              TZS {total.toLocaleString()}
+            </span>
           </div>
         </div>
       )}
 
-      {/* Send button + progress */}
-      {sending ? (
-        <div style={{ maxWidth: 440 }}>
-          <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: '#8b82a0', fontSize: 13 }}>Dispatching invitations...</span>
-            <span style={{ color: '#c9a84c', fontSize: 13, fontWeight: 600 }}>{Math.round(progress)}%</span>
-          </div>
-          <div style={{ height: 8, background: 'rgba(255,255,255,0.06)', borderRadius: 4, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${progress}%`, background: 'linear-gradient(90deg,#22c55e,#c9a84c)', borderRadius: 4, transition: 'width 0.2s linear' }} />
-          </div>
+      {message && (
+        <div style={{ color: "var(--muted-foreground)", fontSize: 13, marginBottom: 14 }}>
+          {message}
         </div>
-      ) : (
-        <button className="btn-gold" disabled={!pkg} style={{ padding: '13px 36px', borderRadius: 10, fontSize: 15, opacity: pkg ? 1 : 0.4, cursor: pkg ? 'pointer' : 'default' }} onClick={handleSend}>
-          Send {target.length} Invitations →
-        </button>
       )}
+
+      <button
+        className="btn-gold"
+        disabled={!pkg || loading || sending || targetGuests.length === 0}
+        style={{
+          padding: "13px 28px",
+          borderRadius: 8,
+          fontSize: 15,
+          opacity: pkg && !loading && !sending && targetGuests.length > 0 ? 1 : 0.45,
+        }}
+        onClick={handleSend}
+      >
+        {sending ? "Sending..." : `Send ${targetGuests.length} Invitations`}
+      </button>
     </div>
-  )
+  );
 }

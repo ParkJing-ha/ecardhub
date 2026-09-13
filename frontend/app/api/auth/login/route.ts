@@ -1,27 +1,59 @@
 import { NextResponse } from "next/server";
-import { createSession, loginUser } from "../../../../lib/auth-db";
-import { sessionCookieName, sessionCookieOptions } from "../../../../lib/session";
+import { djangoFetch } from "../../../../lib/django-api";
+import { setAuthCookies } from "../../../../lib/auth-cookies";
 
 export async function POST(request: Request) {
-  const body = await request.json();
-  const result = await loginUser({
-    email: String(body.email ?? ""),
-    password: String(body.password ?? ""),
-  });
+  try {
+    const body = await request.json();
 
-  if (result.error || !result.user) {
+    const response = await djangoFetch("/api/auth/login/", {
+      method: "POST",
+      body: JSON.stringify({
+        email: String(body.email ?? ""),
+        password: String(body.password ?? ""),
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return NextResponse.json(data, {
+        status: response.status,
+      });
+    }
+
+    if (!data.access || !data.refresh) {
+      return NextResponse.json(
+        {
+          error: "Authentication server returned incomplete tokens.",
+        },
+        {
+          status: 502,
+        },
+      );
+    }
+
+    await setAuthCookies(
+      data.access,
+      data.refresh,
+    );
+
     return NextResponse.json(
-      { error: result.error ?? "Unable to sign in." },
-      { status: 401 },
+      {
+        user: data.user,
+      },
+      {
+        status: 200,
+      },
+    );
+  } catch {
+    return NextResponse.json(
+      {
+        error: "Unable to connect to authentication server.",
+      },
+      {
+        status: 503,
+      },
     );
   }
-
-  const session = await createSession(result.user.id);
-  const response = NextResponse.json({ user: result.user });
-  response.cookies.set(
-    sessionCookieName,
-    session.token,
-    sessionCookieOptions(session.expiresAt),
-  );
-  return response;
 }

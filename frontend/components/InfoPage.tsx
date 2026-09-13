@@ -11,18 +11,18 @@ export default function InfoPage({
 }) {
   return (
     <main
-      className="min-h-screen px-6 py-10"
-      style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
+      className="min-h-screen overflow-x-hidden px-4 py-8 sm:px-6 sm:py-10"
+      style={{ background: "var(--brand-surface)", color: "var(--brand-surface-foreground)" }}
     >
       <div className="mx-auto max-w-3xl">
         <Link
           href="/"
-          className="font-mono-label text-xs"
-          style={{ color: "var(--accent)", textDecoration: "none" }}
+          className="inline-flex min-h-11 items-center font-mono-label text-xs"
+          style={{ color: "var(--accent-text)", textDecoration: "none" }}
         >
-          Back to Invitely
+          Back to EcardHub
         </Link>
-        <div style={{ marginTop: 72 }}>
+        <div style={{ marginTop: "clamp(36px, 10vw, 72px)" }}>
           <div
             className="font-mono-label text-xs uppercase"
             style={{ color: "rgba(229,193,88,0.8)", letterSpacing: "0.12em" }}
@@ -31,7 +31,7 @@ export default function InfoPage({
           </div>
           <h1
             className="font-display"
-            style={{ color: "#fff", fontSize: "clamp(2.5rem, 8vw, 5rem)", margin: "14px 0 22px" }}
+            style={{ color: "#fff", fontSize: "clamp(2.1rem, 8vw, 5rem)", margin: "14px 0 22px" }}
           >
             {title}
           </h1>

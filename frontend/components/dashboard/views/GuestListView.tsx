@@ -1,186 +1,595 @@
-import { useState } from "react";
-import type React from "react";
-import type { Guest, GuestCategory, RSVPStatus } from "../types";
-import { Icon, icons } from "../icons";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import {
+  createGuest,
+  createGuests,
+  deleteGuest,
+  getGuests,
+  logAction,
+  updateGuest,
+  type Guest,
+} from "@/lib/data";
+import { guestKey, parseGuestImportFile } from "@/lib/guest-import";
+import GuestDialog from "@/components/GuestDialog";
+import type { Event as DashboardEvent } from "../types";
 import { useIsMobile } from "../hooks";
 import { Badge, SectionHeader } from "../ui";
+import { Loader2, Plus, Search, Trash2, Upload } from "lucide-react";
 
-export function GuestListView({ guests, setGuests }: { guests: Guest[]; setGuests: React.Dispatch<React.SetStateAction<Guest[]>> }) {
-  const isMobile = useIsMobile()
-  const [search, setSearch] = useState('')
-  const [catFilter, setCatFilter] = useState<GuestCategory | 'All'>('All')
-  const [rsvpFilter, setRsvpFilter] = useState<RSVPStatus | 'All'>('All')
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [newGuest, setNewGuest] = useState({ name: '', phone: '', email: '', category: 'Single' as GuestCategory })
+function normalizeRsvpStatus(
+  status?: string,
+): "Pending" | "Accepted" | "Declined" {
+  switch (status?.toLowerCase()) {
+    case "accepted":
+    case "attending":
+      return "Accepted";
 
-  const filtered = guests.filter(g => {
-    const q = search.toLowerCase()
-    const matchSearch = g.name.toLowerCase().includes(q) || g.phone.includes(q) || g.email.toLowerCase().includes(q)
-    const matchCat = catFilter === 'All' || g.category === catFilter
-    const matchRsvp = rsvpFilter === 'All' || g.rsvp === rsvpFilter
-    return matchSearch && matchCat && matchRsvp
-  })
+    case "declined":
+    case "not_attending":
+      return "Declined";
 
-  const addGuest = () => {
-    if (!newGuest.name.trim()) return
-    const g: Guest = { id: Date.now().toString(), ...newGuest, rsvp: 'Pending', invite: 'Not Sent', checkedIn: false }
-    setGuests(p => [...p, g])
-    setNewGuest({ name: '', phone: '', email: '', category: 'Single' })
-    setShowAddForm(false)
+    default:
+      return "Pending";
   }
+}
 
-  const removeGuest = (id: string) => setGuests(p => p.filter(g => g.id !== id))
+export function GuestListView({ events }: { events: DashboardEvent[] }) {
+  const isMobile = useIsMobile();
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const [selectedEventId, setSelectedEventId] = useState(events[0]?.id ?? "");
+  const [guests, setGuests] = useState<Guest[]>([]);
+  const [loadingGuests, setLoadingGuests] = useState(false);
+  const [guestError, setGuestError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editGuest, setEditGuest] = useState<Guest | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importMessage, setImportMessage] = useState("");
+
+  const selectedEvent = events.find((event) => event.id === selectedEventId);
+
+  useEffect(() => {
+    if (!selectedEventId && events[0]?.id) {
+      queueMicrotask(() => setSelectedEventId(events[0].id));
+    }
+  }, [events, selectedEventId]);
+
+  const loadGuests = useCallback(async () => {
+    if (!selectedEventId) {
+      setGuests([]);
+      return;
+    }
+
+    try {
+      setLoadingGuests(true);
+      setGuestError(null);
+      setGuests(await getGuests(selectedEventId));
+    } catch (error) {
+      setGuestError(
+        error instanceof Error ? error.message : "Unable to load guests.",
+      );
+    } finally {
+      setLoadingGuests(false);
+    }
+  }, [selectedEventId]);
+
+  useEffect(() => {
+    queueMicrotask(loadGuests);
+  }, [loadGuests]);
+
+  const filteredGuests = useMemo(() => {
+    const text = query.trim().toLowerCase();
+
+    return guests.filter((guest) => {
+      const matchesSearch =
+        !text ||
+        guest.full_name.toLowerCase().includes(text) ||
+        guest.phone?.includes(text) ||
+        guest.email?.toLowerCase().includes(text);
+      const matchesFilter =
+        filter === "all" ||
+        guest.category === filter ||
+        guest.rsvp_status === filter ||
+        guest.invitation_status === filter;
+
+      return matchesSearch && matchesFilter;
+    });
+  }, [filter, guests, query]);
+
+  const saveGuest = async (form: Partial<Guest>) => {
+    if (!selectedEventId) return;
+
+    if (editGuest) {
+      await updateGuest(selectedEventId, editGuest.id, form);
+    } else {
+      await createGuest(selectedEventId, form);
+    }
+
+    setDialogOpen(false);
+    setEditGuest(null);
+    loadGuests();
+  };
+
+  const removeGuest = async (guest: Guest) => {
+    if (!selectedEventId || !confirm(`Remove ${guest.full_name}?`)) return;
+
+    await deleteGuest(selectedEventId, guest.id);
+    loadGuests();
+  };
+
+  const importGuests = async (file: File | null) => {
+    if (!file || !selectedEventId) return;
+
+    setImporting(true);
+    setImportMessage("");
+
+    try {
+      const importedGuests = await parseGuestImportFile(file);
+
+      if (importedGuests.length === 0) {
+        setImportMessage(
+          "No guest rows found. Include at least a Full Name column.",
+        );
+        return;
+      }
+
+      const existingKeys = new Set(guests.map(guestKey));
+      const importKeys = new Set<string>();
+      const uniqueGuests = importedGuests.filter((guest) => {
+        const key = guestKey(guest);
+
+        if (existingKeys.has(key) || importKeys.has(key)) return false;
+
+        importKeys.add(key);
+        return true;
+      });
+
+      if (uniqueGuests.length === 0) {
+        setImportMessage("All guests in this file are already in the list.");
+        return;
+      }
+
+      const created = await createGuests(selectedEventId, uniqueGuests);
+      const skippedCount = importedGuests.length - uniqueGuests.length;
+
+      await logAction({
+        action: "guest.import",
+        entityType: "Event",
+        entityId: selectedEventId,
+        details: `Imported ${created.length} guests from ${file.name}`,
+      });
+
+      setImportMessage(
+        `Imported ${created.length} guests from ${file.name}.` +
+          (skippedCount ? ` Skipped ${skippedCount} duplicate guests.` : ""),
+      );
+      loadGuests();
+    } catch (error) {
+      setImportMessage(
+        error instanceof Error ? error.message : "Could not import guests.",
+      );
+    } finally {
+      setImporting(false);
+
+      if (importInputRef.current) {
+        importInputRef.current.value = "";
+      }
+    }
+  };
 
   return (
     <div>
       <SectionHeader
         title="Guest List"
         action={
-          <button className="btn-gold" style={{ padding: '10px 20px', borderRadius: 8, fontSize: 14 }} onClick={() => setShowAddForm(p => !p)}>
-            + Add Guest
+          <button
+            className="btn-gold"
+            disabled={!selectedEventId}
+            style={{
+              padding: "10px 18px",
+              borderRadius: 8,
+              fontSize: 14,
+              opacity: selectedEventId ? 1 : 0.55,
+            }}
+            onClick={() => {
+              setEditGuest(null);
+              setDialogOpen(true);
+            }}
+          >
+            <Plus size={16} style={{ display: "inline", marginRight: 6 }} />
+            Add Guest
           </button>
         }
       />
 
-      {/* Summary badges */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
-        {[
-          { label: `${guests.length} Total`, color: '#8b82a0' },
-          { label: `${guests.filter(g => g.rsvp === 'Accepted').length} Accepted`, color: '#22c55e' },
-          { label: `${guests.filter(g => g.rsvp === 'Pending').length} Pending`, color: '#f59e0b' },
-          { label: `${guests.filter(g => g.rsvp === 'Declined').length} Declined`, color: '#ef4444' },
-          { label: `${guests.filter(g => g.checkedIn).length} Checked In`, color: '#c9a84c' },
-        ].map(b => (
-          <span key={b.label} className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: b.color, border: `1px solid ${b.color}33` }}>{b.label}</span>
-        ))}
-      </div>
-
-      {/* Add guest form */}
-      {showAddForm && (
-        <div className="card-base p-5" style={{ marginBottom: 20 }}>
-          <h3 style={{ fontFamily: 'DM Serif Display, serif', fontSize: 16, margin: '0 0 14px', color: '#f0ece8' }}>Add New Guest</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: 12, marginBottom: 14 }}>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, color: '#8b82a0', marginBottom: 5 }}>Full Name *</label>
-              <input placeholder="e.g. Amina Hassan" value={newGuest.name} onChange={e => setNewGuest(p => ({ ...p, name: e.target.value }))} />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, color: '#8b82a0', marginBottom: 5 }}>Phone Number</label>
-              <input placeholder="+255 7XX XXX XXX" value={newGuest.phone} onChange={e => setNewGuest(p => ({ ...p, phone: e.target.value }))} />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, color: '#8b82a0', marginBottom: 5 }}>Email Address</label>
-              <input placeholder="guest@email.com" value={newGuest.email} onChange={e => setNewGuest(p => ({ ...p, email: e.target.value }))} />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, color: '#8b82a0', marginBottom: 5 }}>Guest Category</label>
-              <select value={newGuest.category} onChange={e => setNewGuest(p => ({ ...p, category: e.target.value as GuestCategory }))}>
-                <option>Single</option>
-                <option>Couple</option>
-                <option>VIP</option>
-              </select>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn-gold" style={{ padding: '9px 22px', borderRadius: 8, fontSize: 14 }} onClick={addGuest}>Add Guest</button>
-            <button className="btn-outline" style={{ padding: '9px 18px', borderRadius: 8, fontSize: 14 }} onClick={() => setShowAddForm(false)}>Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ position: 'relative', flex: '1 1 220px' }}>
-          <Icon d={icons.search} size={15} stroke="#4d4768" />
-          <input placeholder="Search guests..." value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 36 }} />
-          <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
-            <Icon d={icons.search} size={15} stroke="#4d4768" />
+      <div
+        className="card-base"
+        style={{
+          padding: 16,
+          marginBottom: 16,
+          display: "grid",
+          gridTemplateColumns: isMobile ? "1fr" : "minmax(240px, 320px) 1fr",
+          gap: 12,
+          alignItems: "end",
+        }}
+      >
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={{ color: "var(--muted-foreground)", fontSize: 12, fontWeight: 600 }}>
+            Event
           </span>
+          <select
+            value={selectedEventId}
+            onChange={(event) => {
+              setSelectedEventId(event.target.value);
+              setImportMessage("");
+            }}
+            style={{
+              height: 38,
+              borderRadius: 8,
+              border: "1px solid rgba(201,168,76,0.22)",
+              background: "var(--card)",
+              color: "var(--foreground)",
+              padding: "0 10px",
+            }}
+          >
+            {events.map((event) => (
+              <option key={event.id} value={event.id}>
+                {event.title}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div
+          style={{
+            color: "var(--muted-foreground)",
+            fontSize: 13,
+            display: "flex",
+            justifyContent: isMobile ? "flex-start" : "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <span>
+            {selectedEvent
+              ? `${selectedEvent.category} · ${selectedEvent.date}`
+              : "Select an event to manage its guests."}
+          </span>
+          {selectedEvent && (
+            <Link
+              href={`/events/${selectedEvent.id}?tab=guests`}
+              style={{ color: "var(--accent-text)", fontWeight: 700 }}
+            >
+              Open full event
+            </Link>
+          )}
         </div>
-        <select value={catFilter} onChange={e => setCatFilter(e.target.value as GuestCategory | 'All')} style={{ width: 'auto', flex: '0 0 auto' }}>
-          <option value="All">All Categories</option>
-          <option>Single</option>
-          <option>Couple</option>
-          <option>VIP</option>
-        </select>
-        <select value={rsvpFilter} onChange={e => setRsvpFilter(e.target.value as RSVPStatus | 'All')} style={{ width: 'auto', flex: '0 0 auto' }}>
-          <option value="All">All RSVP</option>
-          <option>Accepted</option>
-          <option>Pending</option>
-          <option>Declined</option>
-        </select>
       </div>
 
-      {/* Guest list — cards on mobile, table on desktop */}
-      {isMobile ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {filtered.length === 0 && <div style={{ color: '#4d4768', textAlign: 'center', padding: '40px 0' }}>No guests found.</div>}
-          {filtered.map(g => (
-            <div key={g.id} className="card-base" style={{ padding: '14px 16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 14, color: '#f0ece8' }}>{g.name}</div>
-                  <div style={{ fontSize: 12, color: '#8b82a0', marginTop: 2 }}>{g.phone}</div>
+      <div className="card-base" style={{ overflow: "hidden" }}>
+        <div
+          style={{
+            padding: 16,
+            borderBottom: "1px solid rgba(201,168,76,0.14)",
+            display: "flex",
+            flexDirection: isMobile ? "column" : "row",
+            gap: 12,
+            alignItems: isMobile ? "stretch" : "center",
+          }}
+        >
+          <div style={{ position: "relative", flex: 1, maxWidth: isMobile ? "none" : 340 }}>
+            <Search
+              size={16}
+              style={{
+                position: "absolute",
+                left: 12,
+                top: "50%",
+                transform: "translateY(-50%)",
+                color: "var(--muted-foreground)",
+              }}
+            />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search guests..."
+              style={{
+                width: "100%",
+                height: 38,
+                borderRadius: 8,
+                border: "1px solid rgba(201,168,76,0.22)",
+                background: "transparent",
+                color: "var(--foreground)",
+                padding: "0 12px 0 36px",
+              }}
+            />
+          </div>
+
+          <select
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            style={{
+              height: 38,
+              borderRadius: 8,
+              border: "1px solid rgba(201,168,76,0.22)",
+              background: "var(--card)",
+              color: "var(--foreground)",
+              padding: "0 10px",
+            }}
+          >
+            <option value="all">All guests</option>
+            <option value="Single">Single</option>
+            <option value="Double/Couple">Double/Couple</option>
+            <option value="VIP">VIP</option>
+            <option value="attending">Attending</option>
+            <option value="pending">RSVP pending</option>
+            <option value="not_sent">Not yet invited</option>
+          </select>
+
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+            className="hidden"
+            onChange={(event) => importGuests(event.target.files?.[0] ?? null)}
+          />
+          <button
+            type="button"
+            className="btn-outline"
+            disabled={!selectedEventId || importing}
+            style={{
+              height: 38,
+              padding: "0 14px",
+              borderRadius: 8,
+              fontSize: 13,
+              opacity: !selectedEventId || importing ? 0.55 : 1,
+            }}
+            onClick={() => importInputRef.current?.click()}
+          >
+            {importing ? (
+              <Loader2 size={16} style={{ display: "inline", marginRight: 6 }} />
+            ) : (
+              <Upload size={16} style={{ display: "inline", marginRight: 6 }} />
+            )}
+            Import
+          </button>
+        </div>
+
+        {importMessage && (
+          <div
+            style={{
+              margin: "14px 16px 0",
+              border: "1px solid rgba(201,168,76,0.18)",
+              borderRadius: 8,
+              padding: "10px 12px",
+              color: "var(--muted-foreground)",
+              fontSize: 13,
+              background: "rgba(255,255,255,0.03)",
+            }}
+          >
+            {importMessage}
+          </div>
+        )}
+
+        {guestError && (
+          <div style={{ padding: 16, color: "#ff6b6b", fontSize: 14 }}>
+            {guestError}
+          </div>
+        )}
+
+        {loadingGuests ? (
+          <div style={{ padding: 32, color: "var(--accent-text)", textAlign: "center" }}>
+            <Loader2 size={22} className="animate-spin" style={{ margin: "0 auto 8px" }} />
+            Loading guests...
+          </div>
+        ) : filteredGuests.length === 0 ? (
+          <div style={{ padding: 32, color: "var(--muted-foreground)", textAlign: "center" }}>
+            {selectedEventId
+              ? "No guests found for this event."
+              : "Create an event first, then add guests here."}
+          </div>
+        ) : isMobile ? (
+          <div
+            style={{
+              display: "grid",
+              gap: 12,
+              padding: 12,
+            }}
+          >
+            {filteredGuests.map((guest) => (
+              <div
+                key={guest.id}
+                style={{
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  padding: 14,
+                  background: "var(--card)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    justifyContent: "space-between",
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        color: "var(--foreground)",
+                        fontWeight: 700,
+                        fontSize: 14,
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      {guest.full_name}
+                    </div>
+                    <div
+                      style={{
+                        color: "var(--muted-foreground)",
+                        fontSize: 12,
+                        marginTop: 4,
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      {guest.phone || "No phone"}
+                      {guest.email ? ` · ${guest.email}` : ""}
+                    </div>
+                  </div>
+                  <Badge status={normalizeRsvpStatus(guest.rsvp_status)} />
                 </div>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <Badge status={g.category} />
-                  <button onClick={() => removeGuest(g.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4d4768', padding: 4 }}>
-                    <Icon d={icons.trash} size={14} stroke="#4d4768" />
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 8,
+                    marginTop: 12,
+                  }}
+                >
+                  <span className="badge">{guest.category || "Single"}</span>
+                  <span
+                    className="badge"
+                    style={{
+                      background: "var(--muted)",
+                      color: "var(--muted-foreground)",
+                      textTransform: "capitalize",
+                    }}
+                  >
+                    {guest.invitation_status || "not_sent"}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 8,
+                    marginTop: 12,
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    style={{ minHeight: 44, borderRadius: 8 }}
+                    onClick={() => {
+                      setEditGuest(guest);
+                      setDialogOpen(true);
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    style={{
+                      minHeight: 44,
+                      borderRadius: 8,
+                      color: "var(--destructive)",
+                    }}
+                    onClick={() => removeGuest(guest)}
+                    aria-label={`Delete ${guest.full_name}`}
+                  >
+                    <Trash2 size={16} style={{ display: "inline", marginRight: 6 }} />
+                    Delete
                   </button>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Badge status={g.rsvp} />
-                <Badge status={g.invite} />
-                {g.checkedIn && <span className="badge" style={{ background: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>✓ {g.checkInTime}</span>}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="card-base" style={{ overflow: 'hidden' }}>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            ))}
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", minWidth: 820, borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
-                <tr style={{ borderBottom: '1px solid rgba(201,168,76,0.1)' }}>
-                  {['Name', 'Phone', 'Email', 'Category', 'RSVP', 'Invite', 'Check-In', ''].map(h => (
-                    <th key={h} style={{ padding: '12px 16px', textAlign: 'left', color: '#4d4768', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
+                <tr
+                  style={{
+                    borderBottom: "1px solid rgba(201,168,76,0.14)",
+                    color: "var(--muted-foreground)",
+                    textAlign: "left",
+                  }}
+                >
+                  <th style={{ padding: 12, fontWeight: 600 }}>Full Name</th>
+                  <th style={{ padding: 12, fontWeight: 600 }}>Phone</th>
+                  <th style={{ padding: 12, fontWeight: 600 }}>Email</th>
+                  <th style={{ padding: 12, fontWeight: 600 }}>Category</th>
+                  <th style={{ padding: 12, fontWeight: 600 }}>Invitation</th>
+                  <th style={{ padding: 12, fontWeight: 600 }}>RSVP</th>
+                  <th style={{ padding: 12, fontWeight: 600, textAlign: "right" }}>
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((g, i) => (
-                  <tr key={g.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}>
-                    <td style={{ padding: '13px 16px', color: '#f0ece8', fontWeight: 500 }}>{g.name}</td>
-                    <td style={{ padding: '13px 16px', color: '#8b82a0', fontFamily: 'monospace', fontSize: 12 }}>{g.phone}</td>
-                    <td style={{ padding: '13px 16px', color: '#8b82a0', fontSize: 12 }}>{g.email}</td>
-                    <td style={{ padding: '13px 16px' }}><Badge status={g.category} /></td>
-                    <td style={{ padding: '13px 16px' }}><Badge status={g.rsvp} /></td>
-                    <td style={{ padding: '13px 16px' }}><Badge status={g.invite} /></td>
-                    <td style={{ padding: '13px 16px' }}>
-                      {g.checkedIn
-                        ? <span style={{ color: '#22c55e', fontSize: 12, fontWeight: 600 }}>✓ {g.checkInTime}</span>
-                        : <span style={{ color: '#4d4768', fontSize: 12 }}>—</span>}
+                {filteredGuests.map((guest) => (
+                  <tr
+                    key={guest.id}
+                    style={{ borderBottom: "1px solid rgba(201,168,76,0.08)" }}
+                  >
+                    <td style={{ padding: 12, color: "var(--foreground)", fontWeight: 600 }}>
+                      {guest.full_name}
                     </td>
-                    <td style={{ padding: '13px 16px' }}>
-                      <button onClick={() => removeGuest(g.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4d4768', padding: 4, borderRadius: 4, transition: 'color 0.15s' }}
-                        onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
-                        onMouseLeave={e => (e.currentTarget.style.color = '#4d4768')}>
-                        <Icon d={icons.trash} size={14} stroke="currentColor" />
+                    <td style={{ padding: 12, color: "var(--muted-foreground)" }}>
+                      {guest.phone || "-"}
+                    </td>
+                    <td style={{ padding: 12, color: "var(--muted-foreground)" }}>
+                      {guest.email || "-"}
+                    </td>
+                    <td style={{ padding: 12 }}>
+                      <span className="badge">{guest.category || "Single"}</span>
+                    </td>
+                    <td style={{ padding: 12, color: "var(--muted-foreground)", textTransform: "capitalize" }}>
+                      {guest.invitation_status || "not_sent"}
+                    </td>
+                    <td style={{ padding: 12 }}>
+                      <Badge status={normalizeRsvpStatus(guest.rsvp_status)} />
+                    </td>
+                    <td style={{ padding: 12, textAlign: "right", whiteSpace: "nowrap" }}>
+                      <button
+                        type="button"
+                        style={{
+                          height: 32,
+                          minHeight: 44,
+                          padding: "0 10px",
+                          borderRadius: 8,
+                          color: "var(--accent-text)",
+                        }}
+                        onClick={() => {
+                          setEditGuest(guest);
+                          setDialogOpen(true);
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        style={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: 8,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: "#ff6b6b",
+                        }}
+                        onClick={() => removeGuest(guest)}
+                        aria-label={`Delete ${guest.full_name}`}
+                      >
+                        <Trash2 size={16} />
                       </button>
                     </td>
                   </tr>
                 ))}
-                {filtered.length === 0 && (
-                  <tr>
-                    <td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#4d4768' }}>No guests found.</td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      <GuestDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        guest={editGuest}
+        onSave={saveGuest}
+      />
     </div>
-  )
+  );
 }

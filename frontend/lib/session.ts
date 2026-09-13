@@ -1,19 +1,40 @@
-import { cookies } from "next/headers";
-import { getUserBySession } from "./auth-db";
+import { getAccessToken } from "./auth-cookies";
+import { djangoFetch } from "./django-api";
+import type { PublicUser } from "../utils/types";
 
-export const sessionCookieName = "ecardhub_session";
+export async function getCurrentUser(): Promise<PublicUser | null> {
+  const accessToken = await getAccessToken();
 
-export async function getCurrentUser() {
-  const cookieStore = await cookies();
-  return getUserBySession(cookieStore.get(sessionCookieName)?.value);
-}
+  if (!accessToken) {
+    return null;
+  }
 
-export function sessionCookieOptions(expires?: Date) {
-  return {
-    httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    ...(expires ? { expires } : {}),
-  };
+  try {
+    const response = await djangoFetch("/api/auth/me/", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+
+    if (!data) {
+      return null;
+    }
+
+    return {
+      id: Number(data.id),
+      full_name: String(data.full_name ?? ""),
+      email: String(data.email ?? ""),
+      phone_number: String(data.phone_number ?? ""),
+      role: data.role ?? "event_host",
+    };
+  } catch {
+    return null;
+  }
 }
