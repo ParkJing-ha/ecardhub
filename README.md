@@ -124,17 +124,5 @@ cd frontend && npm run dev
 - 500 errors from the frontend API calls: check backend `ALLOWED_HOSTS`, CORS settings, and that the backend server is running.
 - `sqlite` locked errors: ensure no concurrent process holds the DB (delete `db.sqlite3` only if safe).
 
-## Next steps / recommended improvements
 
-- Add a `requirements.txt` or `pyproject.toml` for backend reproducible installs.
-- Add a `Procfile` / Dockerfile for containerized development.
-- Provide example environment files for production and staging.
 
----
-
-If you want, I can also:
-
-- add a `requirements.txt` and a minimal `.env.example` files, or
-- add a short script to run both services concurrently for local development.
-
-Tell me which of those you'd like next.
