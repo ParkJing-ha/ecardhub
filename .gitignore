@@ -31,3 +31,6 @@ Thumbs.db
 **/__pycache__/
 *.pyc
 **/backend/db.sqlite3
+**/backend/staticfiles/
+loadtest-fixtures*.json
+loadtest-results/

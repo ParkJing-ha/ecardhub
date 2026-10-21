@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { PublicUser } from "../../utils/types";
 import { useAppPreferences } from "../AppPreferencesProvider";
 import { BottomNav, Header, Sidebar } from "./DashboardShell";
@@ -20,6 +20,7 @@ import { QRVerifyView } from "./views/QRVerifyView";
 import { SendInvitesView } from "./views/SendInvitesView";
 import { TemplatesView } from "./views/TemplatesView";
 import { WalletView } from "./views/WalletView";
+import { CardManagementView } from "./views/CardManagementView";
 
 const eventTypeMap: Record<string, EventCategory> = {
   wedding: "Wedding",
@@ -35,6 +36,7 @@ const eventTypeMap: Record<string, EventCategory> = {
 const VALID_VIEWS: View[] = [
   "dashboard",
   "events",
+  "cards",
   "create-event",
   "templates",
   "guests",
@@ -76,14 +78,18 @@ function convertApiEvent(event: ApiEvent): Event {
 export default function DashboardApp({ user }: { user: PublicUser }) {
   const isMobile = useIsMobile();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { language, resolvedTheme, setLanguage, setTheme, t } = useAppPreferences();
 
   const requestedView = searchParams.get("view");
+  const requestedSendEventId = searchParams.get("event");
   const initialView: View = VALID_VIEWS.includes(requestedView as View)
     ? (requestedView as View)
     : "dashboard";
 
   const [view, setView] = useState<View>(initialView);
+  const [guestEventId, setGuestEventId] = useState<string | null>(null);
+  const [sendEventId, setSendEventId] = useState<string | null>(null);
 
   const [events, setEvents] = useState<Event[]>([]);
 
@@ -125,6 +131,13 @@ export default function DashboardApp({ user }: { user: PublicUser }) {
   }, [loadEvents]);
 
   useEffect(() => {
+    const nextView = (searchParams.get("view") ?? "dashboard") as View;
+    if (VALID_VIEWS.includes(nextView)) {
+      queueMicrotask(() => setView(nextView));
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     const navigate = (event: globalThis.Event) => {
       const nextView = (event as CustomEvent<View>).detail;
       if (VALID_VIEWS.includes(nextView)) {
@@ -140,10 +153,9 @@ export default function DashboardApp({ user }: { user: PublicUser }) {
   const addEvent = useCallback((event: Event) => {
     setEvents((current) => [event, ...current]);
 
-    setTimeout(() => {
-      setView("events");
-    }, 1200);
-  }, []);
+    setView("cards");
+    router.push(`/events/${encodeURIComponent(event.id)}`);
+  }, [router]);
 
   const removeEvent = useCallback((eventId: string) => {
     setEvents((current) => current.filter((event) => event.id !== eventId));
@@ -256,6 +268,14 @@ export default function DashboardApp({ user }: { user: PublicUser }) {
             <EventsView
               events={events}
               setView={setView}
+              onViewGuests={(eventId) => {
+                setGuestEventId(eventId);
+                setView("guests");
+              }}
+              onSendEvent={(eventId) => {
+                setSendEventId(eventId);
+                setView("send");
+              }}
               onDeleted={removeEvent}
             />
           )}
@@ -264,11 +284,17 @@ export default function DashboardApp({ user }: { user: PublicUser }) {
             <TemplatesView />
           )}
 
+          {!loadingEvents && !eventsError && view === "cards" && (
+            <CardManagementView events={events} initialEventId={searchParams.get("event")} />
+          )}
+
           {view === "create-event" && <CreateEventView onCreated={addEvent} />}
 
-          {view === "guests" && <GuestListView events={events} />}
+          {view === "guests" && (
+            <GuestListView events={events} initialEventId={requestedView === "guests" ? searchParams.get("event") ?? guestEventId : guestEventId} />
+          )}
 
-          {view === "send" && <SendInvitesView events={events} />}
+          {view === "send" && <SendInvitesView events={events} initialEventId={requestedView === "send" ? requestedSendEventId ?? sendEventId : sendEventId} />}
 
           {view === "qr-verify" && <QRVerifyView events={events} />}
 

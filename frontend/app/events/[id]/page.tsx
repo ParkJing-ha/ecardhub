@@ -1,15 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   loadEventDetail,
   createGuest,
   createGuests,
+  getGuests,
   updateGuest,
   deleteGuest,
-  generateInvitations,
   sendInvitations,
   setRsvp,
   saveContribution,
@@ -23,9 +23,10 @@ import {
   type Usher,
 } from "@/lib/data";
 import { allTemplates, type Template } from "@/lib/templates";
-import { guestKey, parseGuestImportFile } from "@/lib/guest-import";
-import { formatDate, formatDateTime, DISPATCH_CHANNELS } from "@/lib/constants";
-import CategoryCover from "@/components/CategoryCover";
+import { MAX_EVENT_GUESTS, parseGuestImportFile, prepareGuestImport } from "@/lib/guest-import";
+import { formatDate, formatDateTime, INVITATION_CHANNEL_OPTIONS } from "@/lib/constants";
+import { CardManagementView } from "@/components/dashboard/views/CardManagementView";
+import { useAppPreferences } from "@/components/AppPreferencesProvider";
 import InvitationCardPreview from "@/components/templates/InvitationCardPreview";
 import { Badge } from "@/components/dashboard/ui";
 import GuestDialog from "@/components/GuestDialog";
@@ -41,7 +42,6 @@ import {
   Users,
   Search,
   Wand2,
-  CheckCircle2,
   XCircle,
   ShieldCheck,
   Eye,
@@ -67,6 +67,7 @@ function normalizeRsvpStatus(
 }
 
 export default function EventDetailPage() {
+  const { resolvedTheme, setTheme } = useAppPreferences();
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const id = params.id;
@@ -79,13 +80,18 @@ export default function EventDetailPage() {
   const [ushers, setUshers] = useState<Usher[]>([]);
   const [tplMap, setTplMap] = useState<Record<string, Template>>({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const [guestQuery, setGuestQuery] = useState("");
   const [guestFilter, setGuestFilter] = useState("all");
   const [tab, setTab] = useState(searchParams.get("tab") || "overview");
   const [guestImporting, setGuestImporting] = useState(false);
   const [guestImportMessage, setGuestImportMessage] = useState("");
+  const [guestImportMessageIsError, setGuestImportMessageIsError] = useState(false);
   const guestImportInputRef = useRef<HTMLInputElement | null>(null);
+  const guestImportInFlight = useRef(false);
+  const activeEventIdRef = useRef(id);
+  const loadVersion = useRef(0);
 
   const [guestOpen, setGuestOpen] = useState(false);
   const [editGuest, setEditGuest] = useState<Guest | null>(null);
@@ -94,10 +100,19 @@ export default function EventDetailPage() {
   const [previewInv, setPreviewInv] = useState<Invitation | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
 
+  useLayoutEffect(() => {
+    activeEventIdRef.current = id;
+    return () => { activeEventIdRef.current = ""; loadVersion.current += 1; };
+  }, [id]);
+
   const loadAll = useCallback(async () => {
+    if (activeEventIdRef.current !== id) return;
+    const version = ++loadVersion.current;
     setLoading(true);
+    setLoadError("");
     try {
       const data = await loadEventDetail(id);
+      if (activeEventIdRef.current !== id || loadVersion.current !== version) return;
       setEvent(data.event);
       setGuests(data.guests);
       setInvitations(data.invitations);
@@ -105,21 +120,39 @@ export default function EventDetailPage() {
       setCheckins(data.checkins);
       setUshers(data.ushers);
       setTplMap(data.tplMap);
+    } catch (error) {
+      if (activeEventIdRef.current !== id || loadVersion.current !== version) return;
+      setLoadError(error instanceof Error ? error.message : "Unable to load this event.");
     } finally {
-      setLoading(false);
+      if (activeEventIdRef.current === id && loadVersion.current === version) setLoading(false);
     }
   }, [id]);
 
   useEffect(() => {
     queueMicrotask(loadAll);
+    queueMicrotask(() => {
+      setGuestImportMessage("");
+      setGuestImportMessageIsError(false);
+      setGuestOpen(false);
+      setEditGuest(null);
+    });
   }, [loadAll]);
 
-  if (loading) {
+  useEffect(() => {
+    const requested = searchParams.get("tab") || "overview";
+    const allowed = ["overview", "guests", "invitations", "rsvp", "contributions", "checkins", "ushers"];
+    queueMicrotask(() => setTab(allowed.includes(requested) ? requested : "overview"));
+  }, [searchParams]);
+
+  if (loading || (event && event.id !== id && !loadError)) {
     return (
       <div className="flex justify-center py-24">
         <Loader2 className="w-7 h-7 animate-spin text-muted-foreground" />
       </div>
     );
+  }
+  if (loadError) {
+    return <div className="card-base cm-empty" role="alert"><h2>Unable to load your event</h2><p>{loadError}</p><button className="btn-outline cm-button" onClick={loadAll}>Try again</button><Link href="/events">Back to events</Link></div>;
   }
   if (!event) {
     return (
@@ -144,6 +177,9 @@ export default function EventDetailPage() {
     if (editGuest) {
       await updateGuest(id, editGuest.id, form);
     } else {
+      if (guests.length >= MAX_EVENT_GUESTS) {
+        throw new Error(`This event already has ${MAX_EVENT_GUESTS} guests. Remove a guest before adding another.`);
+      }
       await createGuest(id, form);
     }
     setGuestOpen(false);
@@ -158,83 +194,61 @@ export default function EventDetailPage() {
   };
 
   const onImportGuests = async (file: File | null) => {
-    if (!file) return;
+    if (!file || guestImportInFlight.current) return;
+    const eventId = id;
+    const importInput = guestImportInputRef.current;
+    guestImportInFlight.current = true;
 
     setGuestImporting(true);
     setGuestImportMessage("");
+    setGuestImportMessageIsError(false);
 
     try {
       const importedGuests = await parseGuestImportFile(file);
 
       if (importedGuests.length === 0) {
-        setGuestImportMessage(
-          "No guest rows found. Include at least a Full Name column.",
-        );
-        return;
+        throw new Error("No guest rows found. Include at least a Full Name column.");
       }
 
-      const existingKeys = new Set(guests.map(guestKey));
-      const importKeys = new Set<string>();
-      const uniqueGuests = importedGuests.filter((guest) => {
-        const key = guestKey(guest);
+      const existingGuests = await getGuests(eventId);
+      if (activeEventIdRef.current === eventId) setGuests(existingGuests);
+      const prepared = prepareGuestImport(importedGuests, existingGuests);
 
-        if (existingKeys.has(key) || importKeys.has(key)) {
-          return false;
+      if (prepared.guests.length === 0) {
+        if (activeEventIdRef.current === eventId) {
+          setGuestImportMessage(`All guests in this file are already in the list. Skipped ${prepared.skipped_count} duplicate guests.`);
         }
-
-        importKeys.add(key);
-        return true;
-      });
-
-      if (uniqueGuests.length === 0) {
-        setGuestImportMessage("All guests in this file are already in the list.");
         return;
       }
 
-      const created = await createGuests(id, uniqueGuests);
-      const skippedCount = importedGuests.length - uniqueGuests.length;
+      const created = await createGuests(eventId, prepared.guests);
 
-      await logAction({
+      if (activeEventIdRef.current === eventId) {
+        setGuests([...existingGuests, ...created]);
+        setGuestImportMessage(
+          `Imported ${created.length} guests from ${file.name}.` +
+            (prepared.skipped_count ? ` Skipped ${prepared.skipped_count} duplicate guests.` : ""),
+        );
+        void loadAll();
+      }
+
+      void logAction({
         action: "guest.import",
         entityType: "Event",
-        entityId: id,
+        entityId: eventId,
         details: `Imported ${created.length} guests from ${file.name}`,
-      });
-
-      setGuestImportMessage(
-        `Imported ${created.length} guests from ${file.name}.` +
-          (skippedCount ? ` Skipped ${skippedCount} duplicate guests.` : ""),
-      );
-      loadAll();
+      }).catch(() => {});
     } catch (error) {
-      setGuestImportMessage(
-        error instanceof Error ? error.message : "Could not import guests.",
-      );
-    } finally {
-      setGuestImporting(false);
-
-      if (guestImportInputRef.current) {
-        guestImportInputRef.current.value = "";
+      if (activeEventIdRef.current === eventId) {
+        setGuestImportMessageIsError(true);
+        setGuestImportMessage(error instanceof Error ? error.message : "Could not import guests.");
       }
+    } finally {
+      guestImportInFlight.current = false;
+      if (activeEventIdRef.current) setGuestImporting(false);
+
+      if (importInput) importInput.value = "";
     }
-  };
-
-  const onGenerate = async () => {
-    const defaultTpl = Object.values(tplMap)[0];
-    const created = await generateInvitations(id, guests, invitations, {
-      event_id: id,
-      template_id: defaultTpl?.id || "preset-0",
-      channel: "whatsapp",
-      package: "standard",
-    });
-
-    await logAction({
-      action: "invitation.generate",
-      entityType: "Event",
-      entityId: id,
-      details: `Generated ${created.length} invitation cards`,
-    });
-    loadAll();
   };
 
   const onSend = async (channel: string) => {
@@ -323,10 +337,10 @@ export default function EventDetailPage() {
   const contrTotal = contributions
     .filter((c) => c.status === "received")
     .reduce((s, c) => s + (c.amount || 0), 0);
-  const sentCount = invitations.filter((i) => i.status !== "draft").length;
+
 
   const TABS = [
-    { key: "overview", label: "Overview" },
+    { key: "overview", label: "Card management" },
     { key: "guests", label: `Guests (${guests.length})` },
     { key: "invitations", label: `Invitations (${invitations.length})` },
     { key: "rsvp", label: "RSVP" },
@@ -336,7 +350,8 @@ export default function EventDetailPage() {
   ];
 
   return (
-    <div className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 pb-8 sm:px-4 lg:px-6">
+    <div className="event-management mx-auto w-full max-w-7xl px-3 py-5 pb-8 sm:px-4 lg:px-6">
+      <div className="flex items-center justify-between gap-3">
       <Link
         href="/events"
         className="mb-4 inline-flex min-h-11 items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
@@ -344,14 +359,14 @@ export default function EventDetailPage() {
         <ArrowLeft className="w-4 h-4" />
         Back to events
       </Link>
+      <button className="btn-outline cm-button mb-4" onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}>
+        {resolvedTheme === "dark" ? "Light theme" : "Dark theme"}
+      </button>
+      </div>
 
       {/* Header card */}
       <div className="mb-5 overflow-hidden rounded-xl border border-border bg-card shadow-sm sm:mb-6">
-        <CategoryCover
-          category={event.category}
-          title={event.title}
-          className="h-28 sm:h-40"
-        />
+        <div className="event-studio-banner"><p className="cm-eyebrow">YOUR EVENT · YOUR INVITATION STUDIO</p><span>Made for your moment</span></div>
         <div className="p-4 sm:p-5 md:p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
@@ -387,10 +402,10 @@ export default function EventDetailPage() {
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:justify-end">
               <Link
                 href={`/card-builder/${id}`}
-                className="inline-flex min-h-11 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold hover:bg-muted"
+                className="btn-gold cm-button"
               >
                 <Wand2 className="w-4 h-4 mr-2" />
-                Card Builder
+                Create Cards
               </Link>
               <button
                 onClick={() => setSendOpen(true)}
@@ -402,6 +417,17 @@ export default function EventDetailPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      {searchParams.get("generated") && /^\d+$/.test(searchParams.get("generated") ?? "") && (
+        <p role="status" className="card-base mb-5 p-4">{searchParams.get("generated")} invitation cards generated and ready to send. Each card has its own guest name, card ID, and QR code.</p>
+      )}
+
+      <div className="card-base mb-5 px-4 py-3">
+        <p className="text-sm font-semibold">{guests.length} / {MAX_EVENT_GUESTS} guests · {invitations.length} / {MAX_EVENT_GUESTS} cards</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          Each event supports up to {MAX_EVENT_GUESTS} guests and {MAX_EVENT_GUESTS} personalised cards. Import skips duplicates and must fit the remaining spaces. You can still edit existing guests when the limit is reached.
+        </p>
       </div>
 
       {/* Tabs */}
@@ -425,32 +451,12 @@ export default function EventDetailPage() {
 
       {tab === "overview" && (
         <div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard
-              icon={Users}
-              value={guests.length}
-              label="Guests"
-              tone="primary"
-            />
-            <StatCard
-              icon={Send}
-              value={sentCount}
-              label="Invitations sent"
-              tone="accent"
-            />
-            <StatCard
-              icon={CheckCircle2}
-              value={rsvpCounts.attending}
-              label="Attending"
-              tone="emerald"
-            />
-            <StatCard
-              icon={HandCoins}
-              value={`TSh ${contrTotal.toLocaleString()}`}
-              label="Contributions"
-              tone="violet"
-            />
-          </div>
+          <CardManagementView
+            events={[]}
+            initialEventId={id}
+            embedded
+            initialData={{ event, guests, invitations, templates: Object.values(tplMap).filter((template) => !template.id.startsWith("preset-")) }}
+          />
           <div className="rounded-xl border border-border bg-card p-5 mt-5">
             <h3 className="font-heading font-semibold mb-3">Event details</h3>
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
@@ -516,19 +522,20 @@ export default function EventDetailPage() {
                 )}
                 Import
               </button>
-              <button
-                onClick={onGenerate}
+              <Link
+                href={`/card-builder/${id}`}
                 className="inline-flex min-h-11 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold hover:bg-muted"
               >
                 <Wand2 className="w-4 h-4 mr-2" />
-                Generate cards
-              </button>
+                Create Cards
+              </Link>
               <button
+                disabled={guestImporting || guests.length >= MAX_EVENT_GUESTS}
                 onClick={() => {
                   setEditGuest(null);
                   setGuestOpen(true);
                 }}
-                className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground"
+                className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Add guest
@@ -536,7 +543,7 @@ export default function EventDetailPage() {
             </div>
           </div>
           {guestImportMessage && (
-            <div className="mx-4 mt-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+            <div role={guestImportMessageIsError ? "alert" : "status"} className={`mx-4 mt-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm ${guestImportMessageIsError ? "text-destructive" : "text-muted-foreground"}`}>
               {guestImportMessage}
             </div>
           )}
@@ -565,13 +572,13 @@ export default function EventDetailPage() {
             <h3 className="font-heading font-semibold">
               Generated invitation cards
             </h3>
-            <button
-              onClick={onGenerate}
+            <Link
+              href={`/card-builder/${id}`}
               className="inline-flex min-h-11 items-center justify-center rounded-md border border-border px-3 text-sm font-semibold hover:bg-muted"
             >
               <Wand2 className="w-4 h-4 mr-2" />
-              Generate for new guests
-            </button>
+              Create Cards
+            </Link>
           </div>
           {invitations.length === 0 ? (
             <EmptyState
@@ -726,14 +733,14 @@ export default function EventDetailPage() {
             unique QR code and ID.
           </p>
           <div className="grid grid-cols-1 gap-2">
-            {DISPATCH_CHANNELS.map((ch) => (
+            {INVITATION_CHANNEL_OPTIONS.map((channel) => (
               <button
-                key={ch}
-                className="h-10 px-4 inline-flex items-center justify-start rounded-md border border-border hover:bg-muted"
-                onClick={() => onSend(ch)}
+                key={channel.value}
+                className="min-h-10 px-4 py-2 inline-flex flex-col items-start justify-center rounded-md border border-border hover:bg-muted"
+                onClick={() => onSend(channel.value)}
               >
-                <Send className="w-4 h-4 mr-2" />
-                Send via {ch}
+                <span className="inline-flex items-center"><Send className="w-4 h-4 mr-2" />Send via {channel.label}</span>
+                <span className="ml-6 text-xs text-muted-foreground text-left">{channel.description}</span>
               </button>
             ))}
           </div>
@@ -754,6 +761,7 @@ export default function EventDetailPage() {
               phone: previewInv.guest_phone,
             }}
             template={tplMap[previewInv.template_id] || allTemplates()[0]}
+            invitation={previewInv}
             code={previewInv.invitation_code}
           />
           <div className="flex justify-end mt-4">
@@ -845,33 +853,6 @@ const TONES: Record<string, string> = {
   muted: "bg-muted text-muted-foreground",
 };
 
-function StatCard({
-  icon: Icon,
-  value,
-  label,
-  tone,
-}: {
-  icon: typeof Users;
-  value: string | number;
-  label: string;
-  tone: string;
-}) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-5">
-      <div className="flex items-center gap-3">
-        <div
-          className={`w-10 h-10 rounded-xl flex items-center justify-center ${TONES[tone]}`}
-        >
-          <Icon className="w-5 h-5" />
-        </div>
-        <div>
-          <p className="text-2xl font-heading font-semibold">{value}</p>
-          <p className="text-xs text-muted-foreground">{label}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function RsvpStat({
   value,

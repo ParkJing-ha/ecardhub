@@ -1,307 +1,235 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  generateInvitations,
   getGuests,
   getInvitations,
-  getTemplates,
   sendInvitations,
   type Guest,
   type Invitation,
 } from "@/lib/data";
-import { allTemplates } from "@/lib/templates";
-import { DISPATCH_CHANNELS } from "@/lib/constants";
+import { INVITATION_CHANNEL_OPTIONS } from "@/lib/constants";
 import type { Event as DashboardEvent } from "../types";
-import { Icon } from "../icons";
-import { useIsMobile } from "../hooks";
 import { SectionHeader } from "../ui";
-import { packages as PACKAGES } from "../data";
 
-export function SendInvitesView({ events }: { events: DashboardEvent[] }) {
-  const isMobile = useIsMobile();
-  const [selectedEventId, setSelectedEventId] = useState(events[0]?.id ?? "");
-  const [pkg, setPkg] = useState<string | null>(null);
-  const [channel, setChannel] = useState(DISPATCH_CHANNELS[0]);
-  const [audience, setAudience] = useState<"all" | "pending" | "accepted">("all");
+type Audience = "all" | "pending" | "accepted";
+
+export function SendInvitesView({ events, initialEventId }: { events: DashboardEvent[]; initialEventId?: string | null }) {
+  const [selectedEventId, setSelectedEventId] = useState(
+    () => events.find((event) => event.id === initialEventId)?.id ?? events[0]?.id ?? "",
+  );
+  const [channel, setChannel] = useState<string>("whatsapp");
+  const [audience, setAudience] = useState<Audience>("all");
   const [guests, setGuests] = useState<Guest[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [loadedEventId, setLoadedEventId] = useState("");
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const loadVersion = useRef(0);
 
   useEffect(() => {
-    if (!selectedEventId && events[0]?.id) {
-      queueMicrotask(() => setSelectedEventId(events[0].id));
-    }
-  }, [events, selectedEventId]);
+    queueMicrotask(() => {
+      setSelectedEventId((current) =>
+        events.some((event) => event.id === current)
+          ? current
+          : events.find((event) => event.id === initialEventId)?.id ?? events[0]?.id ?? "",
+      );
+    });
+  }, [events, initialEventId]);
 
   const loadData = useCallback(async () => {
+    const version = ++loadVersion.current;
+    setErrorMessage("");
+
     if (!selectedEventId) {
       setGuests([]);
       setInvitations([]);
+      setLoadedEventId("");
+      setLoading(false);
       return;
     }
 
     try {
       setLoading(true);
-      setMessage("");
       const [nextGuests, nextInvitations] = await Promise.all([
         getGuests(selectedEventId),
         getInvitations(selectedEventId),
       ]);
+      if (version !== loadVersion.current) return;
       setGuests(nextGuests);
       setInvitations(nextInvitations);
+      setLoadedEventId(selectedEventId);
     } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Unable to load invitations.",
+      if (version !== loadVersion.current) return;
+      setLoadedEventId("");
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unable to load invitation cards.",
       );
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
   }, [selectedEventId]);
 
   useEffect(() => {
     queueMicrotask(loadData);
+    return () => { loadVersion.current += 1; };
   }, [loadData]);
 
-  const selectedPkg = PACKAGES.find((item) => item.id === pkg);
-  const targetGuests = useMemo(() => {
-    if (audience === "pending") {
-      return guests.filter((guest) => guest.rsvp_status === "pending");
+  const selectedChannel = INVITATION_CHANNEL_OPTIONS.find((item) => item.value === channel) ?? INVITATION_CHANNEL_OPTIONS[2];
+  const readyCardsByAudience = useMemo(() => {
+    const cards: Record<Audience, Invitation[]> = { all: [], pending: [], accepted: [] };
+    if (loadedEventId !== selectedEventId) return cards;
+
+    const guestById = new Map(guests.map((guest) => [guest.id, guest]));
+    for (const invitation of invitations) {
+      if (invitation.status !== "draft" && invitation.status !== "queued") continue;
+      const guest = guestById.get(invitation.guest_id);
+      if (!guest) continue;
+
+      cards.all.push(invitation);
+      if (guest.rsvp_status === "pending") cards.pending.push(invitation);
+      if (guest.rsvp_status === "attending") cards.accepted.push(invitation);
     }
-    if (audience === "accepted") {
-      return guests.filter((guest) => guest.rsvp_status === "attending");
-    }
-    return guests;
-  }, [audience, guests]);
-  const total = targetGuests.length * (selectedPkg?.price || 0);
+    return cards;
+  }, [guests, invitations, loadedEventId, selectedEventId]);
+  const dispatchTargets = readyCardsByAudience[audience];
+  const canSend = Boolean(selectedEventId) && !loading && !sending && dispatchTargets.length > 0;
 
   const handleSend = async () => {
-    if (!selectedEventId || !selectedPkg) return;
+    if (!canSend) return;
 
     setSending(true);
     setMessage("");
+    setErrorMessage("");
 
     try {
-      const templates = await getTemplates(selectedEventId);
-      const defaultTemplate = allTemplates(templates)[0];
-      const existingForTarget = invitations.filter((invitation) =>
-        targetGuests.some((guest) => guest.id === invitation.guest_id),
-      );
-      const created = await generateInvitations(
-        selectedEventId,
-        targetGuests,
-        invitations,
-        {
-          event_id: selectedEventId,
-          template_id: defaultTemplate?.id || "preset-0",
-          channel: channel.toLowerCase(),
-          package: selectedPkg.id,
-        },
-      );
-      const dispatchTargets = [...existingForTarget, ...created];
-
-      if (dispatchTargets.length === 0) {
-        setMessage("There are no guests ready for dispatch.");
-        return;
-      }
-
-      await sendInvitations(selectedEventId, dispatchTargets, channel.toLowerCase());
+      await sendInvitations(selectedEventId, dispatchTargets, channel);
       setMessage(
-        `Queued ${dispatchTargets.length} invitations via ${channel}. Delivery status is saved in notification history.`,
+        `Dispatch request recorded for ${dispatchTargets.length} invitation ${dispatchTargets.length === 1 ? "card" : "cards"} via ${selectedChannel.label}.`,
       );
-      loadData();
+      await loadData();
     } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Unable to send invitations.",
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unable to submit invitation cards for sending.",
       );
     } finally {
       setSending(false);
     }
   };
 
+  const selectStyle = {
+    height: 44,
+    borderRadius: 10,
+    border: "1px solid var(--border)",
+    background: "var(--card)",
+    color: "var(--foreground)",
+    padding: "0 12px",
+    width: "100%",
+  };
+
   return (
     <div>
-      <SectionHeader title="Send Invitations" />
+      <SectionHeader title="Send Invitation Cards" />
+      <p style={{ color: "var(--muted-foreground)", fontSize: 14, lineHeight: 1.6, margin: "-12px 0 24px" }}>
+        Generate personalised cards in Card Builder, then choose your audience and delivery channel here.
+      </p>
 
-      <div className="card-base p-4" style={{ marginBottom: 20 }}>
-        <label style={{ display: "grid", gap: 6, maxWidth: 360 }}>
-          <span style={{ color: "var(--muted-foreground)", fontSize: 12, fontWeight: 600 }}>
-            Event
-          </span>
-          <select
-            value={selectedEventId}
-            onChange={(event) => setSelectedEventId(event.target.value)}
-            style={{
-              height: 38,
-              borderRadius: 8,
-              border: "1px solid rgba(201,168,76,0.22)",
-              background: "var(--card)",
-              color: "var(--foreground)",
-              padding: "0 10px",
-            }}
-          >
-            {events.map((event) => (
-              <option key={event.id} value={event.id}>
-                {event.title}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <div style={{ marginBottom: 28 }}>
-        <h3 style={{ fontSize: 14, color: "var(--muted-foreground)", fontWeight: 600, textTransform: "uppercase", margin: "0 0 14px" }}>
-          Distribution Package
-        </h3>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)",
-            gap: 12,
-          }}
-        >
-          {PACKAGES.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setPkg(item.id)}
-              style={{
-                padding: "18px 20px",
-                borderRadius: 8,
-                border: "1.5px solid",
-                borderColor: pkg === item.id ? item.color : "rgba(201,168,76,0.15)",
-                background: pkg === item.id ? `${item.color}12` : "#17142e",
-                cursor: "pointer",
-                textAlign: "left",
+      <div className="card-base p-5" style={{ marginBottom: 20 }}>
+        <div className="grid gap-5 md:grid-cols-2">
+          <label style={{ display: "grid", gap: 8 }}>
+            <span style={{ color: "var(--foreground)", fontSize: 13, fontWeight: 600 }}>Event</span>
+            <select
+              value={selectedEventId}
+              disabled={sending || events.length === 0}
+              onChange={(event) => {
+                setSelectedEventId(event.target.value);
+                setMessage("");
+                setErrorMessage("");
               }}
+              style={selectStyle}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                <Icon d={item.icon} size={18} stroke={item.color} />
-                <span style={{ fontWeight: 600, fontSize: 14, color: pkg === item.id ? item.color : "var(--foreground)" }}>
-                  {item.name}
-                </span>
-              </div>
-              <div style={{ fontSize: 12, color: "var(--muted-foreground)", marginBottom: 10 }}>
-                {item.desc}
-              </div>
-              <div style={{ fontFamily: "DM Serif Display, serif", fontSize: 20, color: item.color }}>
-                TZS {item.price}
-                <span style={{ fontSize: 11, color: "var(--muted-foreground)", fontFamily: "Outfit,sans-serif", fontWeight: 400 }}>
-                  /card
-                </span>
-              </div>
-            </button>
-          ))}
+              {events.length === 0 && <option value="">No events available</option>}
+              {events.map((event) => (
+                <option key={event.id} value={event.id}>{event.title}</option>
+              ))}
+            </select>
+          </label>
+
+          <label style={{ display: "grid", gap: 8 }}>
+            <span style={{ color: "var(--foreground)", fontSize: 13, fontWeight: 600 }}>Delivery channel</span>
+            <select value={channel} disabled={sending} onChange={(event) => setChannel(event.target.value)} style={selectStyle}>
+              {INVITATION_CHANNEL_OPTIONS.map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </label>
         </div>
+        <p style={{ color: "var(--muted-foreground)", fontSize: 12, lineHeight: 1.6, margin: "14px 0 0" }}>
+          {selectedChannel.description}
+        </p>
       </div>
 
-      <div style={{ marginBottom: 28 }}>
-        <h3 style={{ fontSize: 14, color: "var(--muted-foreground)", fontWeight: 600, textTransform: "uppercase", margin: "0 0 14px" }}>
-          Target Audience
-        </h3>
+      <div className="card-base p-5" style={{ marginBottom: 20 }}>
+        <h3 style={{ fontSize: 14, color: "var(--foreground)", fontWeight: 600, margin: "0 0 14px" }}>Target audience</h3>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           {[
-            { value: "all" as const, label: `All Guests (${guests.length})` },
-            {
-              value: "pending" as const,
-              label: `Pending RSVP (${guests.filter((guest) => guest.rsvp_status === "pending").length})`,
-            },
-            {
-              value: "accepted" as const,
-              label: `Accepted Only (${guests.filter((guest) => guest.rsvp_status === "attending").length})`,
-            },
+            { value: "all" as const, label: "All guests" },
+            { value: "pending" as const, label: "Pending RSVP" },
+            { value: "accepted" as const, label: "Accepted only" },
           ].map((option) => (
             <button
               key={option.value}
               type="button"
+              disabled={sending}
+              aria-pressed={audience === option.value}
               onClick={() => setAudience(option.value)}
               style={{
-                padding: "9px 16px",
-                borderRadius: 8,
+                padding: "10px 16px",
+                borderRadius: 10,
                 fontSize: 13,
                 border: "1px solid",
-                borderColor:
-                  audience === option.value ? "#c9a84c" : "rgba(201,168,76,0.2)",
-                background:
-                  audience === option.value ? "rgba(201,168,76,0.12)" : "transparent",
-                color:
-                  audience === option.value
-                    ? "var(--accent-text)"
-                    : "var(--muted-foreground)",
+                borderColor: audience === option.value ? "#c9a84c" : "var(--border)",
+                background: audience === option.value ? "rgba(201,168,76,0.12)" : "transparent",
+                color: audience === option.value ? "var(--accent-text)" : "var(--muted-foreground)",
               }}
             >
-              {option.label}
+              {option.label} ({readyCardsByAudience[option.value].length})
             </button>
           ))}
         </div>
+        <p style={{ color: "var(--muted-foreground)", fontSize: 12, lineHeight: 1.6, margin: "14px 0 0" }}>
+          Counts show generated cards available for sending. Previously submitted cards are excluded.
+        </p>
       </div>
 
-      <label style={{ display: "grid", gap: 6, maxWidth: 260, marginBottom: 24 }}>
-        <span style={{ color: "var(--muted-foreground)", fontSize: 12, fontWeight: 600 }}>
-          Channel
-        </span>
-        <select
-          value={channel}
-          onChange={(event) => setChannel(event.target.value)}
-          style={{
-            height: 38,
-            borderRadius: 8,
-            border: "1px solid rgba(201,168,76,0.22)",
-            background: "var(--card)",
-            color: "var(--foreground)",
-            padding: "0 10px",
-          }}
-        >
-          {DISPATCH_CHANNELS.map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      {pkg && (
-        <div className="card-base p-5" style={{ marginBottom: 24, maxWidth: 440 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-            <span style={{ color: "var(--muted-foreground)" }}>Cards to send</span>
-            <span style={{ color: "var(--foreground)", fontWeight: 600 }}>
-              {targetGuests.length}
-            </span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-            <span style={{ color: "var(--muted-foreground)" }}>Price per card</span>
-            <span style={{ color: "var(--foreground)", fontWeight: 600 }}>
-              TZS {selectedPkg?.price}
-            </span>
-          </div>
-          <div style={{ height: 1, background: "rgba(201,168,76,0.15)", margin: "10px 0" }} />
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--foreground)", fontWeight: 600 }}>Total Cost</span>
-            <span style={{ fontFamily: "DM Serif Display, serif", fontSize: 22, color: "var(--accent-text)" }}>
-              TZS {total.toLocaleString()}
-            </span>
-          </div>
+      <div className="card-base p-5" style={{ marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+          <span style={{ color: "var(--muted-foreground)", fontSize: 14 }}>Cards to send</span>
+          <span style={{ color: "var(--accent-text)", fontSize: 24, fontWeight: 600 }}>
+            {loading ? "…" : dispatchTargets.length}
+          </span>
         </div>
-      )}
+        {!loading && !errorMessage && dispatchTargets.length === 0 && selectedEventId && (
+          <p style={{ color: "var(--muted-foreground)", fontSize: 13, lineHeight: 1.6, margin: "12px 0 0" }}>
+            No cards are ready for this audience. {" "}
+            <Link href={`/card-builder/${selectedEventId}`} style={{ color: "var(--accent-text)" }}>Generate cards</Link>
+            {" "}or choose another audience.
+          </p>
+        )}
+      </div>
 
-      {message && (
-        <div style={{ color: "var(--muted-foreground)", fontSize: 13, marginBottom: 14 }}>
-          {message}
-        </div>
-      )}
+      {message && <p role="status" style={{ color: "var(--accent-text)", fontSize: 13, marginBottom: 14 }}>{message}</p>}
+      {errorMessage && <p role="alert" style={{ color: "var(--destructive)", fontSize: 13, marginBottom: 14 }}>{errorMessage}</p>}
 
       <button
+        type="button"
         className="btn-gold"
-        disabled={!pkg || loading || sending || targetGuests.length === 0}
-        style={{
-          padding: "13px 28px",
-          borderRadius: 8,
-          fontSize: 15,
-          opacity: pkg && !loading && !sending && targetGuests.length > 0 ? 1 : 0.45,
-        }}
+        disabled={!canSend}
+        style={{ padding: "13px 28px", borderRadius: 10, fontSize: 15, opacity: canSend ? 1 : 0.45 }}
         onClick={handleSend}
       >
-        {sending ? "Sending..." : `Send ${targetGuests.length} Invitations`}
+        {sending ? "Submitting…" : loading ? "Loading cards…" : `Submit ${dispatchTargets.length} cards for sending`}
       </button>
     </div>
   );

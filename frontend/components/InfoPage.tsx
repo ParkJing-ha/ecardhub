@@ -20,7 +20,7 @@ export default function InfoPage({
           className="inline-flex min-h-11 items-center font-mono-label text-xs"
           style={{ color: "var(--accent-text)", textDecoration: "none" }}
         >
-          Back to EcardHub
+          Back to apexecard
         </Link>
         <div style={{ marginTop: "clamp(36px, 10vw, 72px)" }}>
           <div

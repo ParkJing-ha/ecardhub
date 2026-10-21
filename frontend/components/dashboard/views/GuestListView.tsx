@@ -9,7 +9,7 @@ import {
   updateGuest,
   type Guest,
 } from "@/lib/data";
-import { guestKey, parseGuestImportFile } from "@/lib/guest-import";
+import { MAX_EVENT_GUESTS, parseGuestImportFile, prepareGuestImport } from "@/lib/guest-import";
 import GuestDialog from "@/components/GuestDialog";
 import type { Event as DashboardEvent } from "../types";
 import { useIsMobile } from "../hooks";
@@ -33,11 +33,26 @@ function normalizeRsvpStatus(
   }
 }
 
-export function GuestListView({ events }: { events: DashboardEvent[] }) {
+export function GuestListView({
+  events,
+  initialEventId,
+}: {
+  events: DashboardEvent[];
+  initialEventId?: string | null;
+}) {
   const isMobile = useIsMobile();
   const importInputRef = useRef<HTMLInputElement | null>(null);
-  const [selectedEventId, setSelectedEventId] = useState(events[0]?.id ?? "");
+  const [selectedEventId, setSelectedEventId] = useState(
+    initialEventId && events.some((event) => event.id === initialEventId)
+      ? initialEventId
+      : events[0]?.id ?? "",
+  );
   const [guests, setGuests] = useState<Guest[]>([]);
+  const selectedEventIdRef = useRef(selectedEventId);
+  const previousInitialEventId = useRef(initialEventId);
+  const loadVersion = useRef(0);
+  const mounted = useRef(true);
+  const importInFlight = useRef(false);
   const [loadingGuests, setLoadingGuests] = useState(false);
   const [guestError, setGuestError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -46,36 +61,69 @@ export function GuestListView({ events }: { events: DashboardEvent[] }) {
   const [editGuest, setEditGuest] = useState<Guest | null>(null);
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState("");
+  const [importMessageIsError, setImportMessageIsError] = useState(false);
 
   const selectedEvent = events.find((event) => event.id === selectedEventId);
 
-  useEffect(() => {
-    if (!selectedEventId && events[0]?.id) {
-      queueMicrotask(() => setSelectedEventId(events[0].id));
-    }
-  }, [events, selectedEventId]);
+  const selectEvent = useCallback((eventId: string) => {
+    selectedEventIdRef.current = eventId;
+    loadVersion.current += 1;
+    setSelectedEventId(eventId);
+    setGuests([]);
+    setLoadingGuests(Boolean(eventId));
+    setGuestError(null);
+    setImportMessage("");
+    setImportMessageIsError(false);
+    setDialogOpen(false);
+    setEditGuest(null);
+  }, []);
 
-  const loadGuests = useCallback(async () => {
-    if (!selectedEventId) {
+  useEffect(() => {
+    queueMicrotask(() => {
+      const requestedEventChanged = previousInitialEventId.current !== initialEventId;
+      previousInitialEventId.current = initialEventId;
+      if (requestedEventChanged && initialEventId && events.some((event) => event.id === initialEventId)) {
+        selectEvent(initialEventId);
+        return;
+      }
+      if (events.some((event) => event.id === selectedEventIdRef.current)) return;
+      selectEvent(events.find((event) => event.id === initialEventId)?.id ?? events[0]?.id ?? "");
+    });
+  }, [events, initialEventId, selectEvent]);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; loadVersion.current += 1; };
+  }, []);
+
+  const loadGuests = useCallback(async (eventId = selectedEventId) => {
+    if (!mounted.current || selectedEventIdRef.current !== eventId) return;
+    const version = ++loadVersion.current;
+    if (!eventId) {
       setGuests([]);
+      setLoadingGuests(false);
       return;
     }
 
     try {
       setLoadingGuests(true);
       setGuestError(null);
-      setGuests(await getGuests(selectedEventId));
+      const nextGuests = await getGuests(eventId);
+      if (!mounted.current || version !== loadVersion.current || selectedEventIdRef.current !== eventId) return;
+      setGuests(nextGuests);
     } catch (error) {
+      if (!mounted.current || version !== loadVersion.current || selectedEventIdRef.current !== eventId) return;
       setGuestError(
         error instanceof Error ? error.message : "Unable to load guests.",
       );
     } finally {
-      setLoadingGuests(false);
+      if (mounted.current && version === loadVersion.current && selectedEventIdRef.current === eventId) setLoadingGuests(false);
     }
   }, [selectedEventId]);
 
   useEffect(() => {
-    queueMicrotask(loadGuests);
+    queueMicrotask(() => { void loadGuests(); });
+    return () => { loadVersion.current += 1; };
   }, [loadGuests]);
 
   const filteredGuests = useMemo(() => {
@@ -103,6 +151,9 @@ export function GuestListView({ events }: { events: DashboardEvent[] }) {
     if (editGuest) {
       await updateGuest(selectedEventId, editGuest.id, form);
     } else {
+      if (guests.length >= MAX_EVENT_GUESTS) {
+        throw new Error(`This event already has ${MAX_EVENT_GUESTS} guests. Remove a guest before adding another.`);
+      }
       await createGuest(selectedEventId, form);
     }
 
@@ -119,62 +170,60 @@ export function GuestListView({ events }: { events: DashboardEvent[] }) {
   };
 
   const importGuests = async (file: File | null) => {
-    if (!file || !selectedEventId) return;
+    if (!file || !selectedEventId || importInFlight.current) return;
+    const eventId = selectedEventId;
+    const importInput = importInputRef.current;
+    importInFlight.current = true;
 
     setImporting(true);
     setImportMessage("");
+    setImportMessageIsError(false);
 
     try {
       const importedGuests = await parseGuestImportFile(file);
 
       if (importedGuests.length === 0) {
+        throw new Error("No guest rows found. Include at least a Full Name column.");
+      }
+
+      const existingGuests = await getGuests(eventId);
+      if (mounted.current && selectedEventIdRef.current === eventId) setGuests(existingGuests);
+      const prepared = prepareGuestImport(importedGuests, existingGuests);
+
+      if (prepared.guests.length === 0) {
+        if (mounted.current && selectedEventIdRef.current === eventId) {
+          setImportMessage(`All guests in this file are already in the list. Skipped ${prepared.skipped_count} duplicate guests.`);
+        }
+        return;
+      }
+
+      const created = await createGuests(eventId, prepared.guests);
+
+      if (mounted.current && selectedEventIdRef.current === eventId) {
+        setGuests([...existingGuests, ...created]);
         setImportMessage(
-          "No guest rows found. Include at least a Full Name column.",
+          `Imported ${created.length} guests from ${file.name}.` +
+            (prepared.skipped_count ? ` Skipped ${prepared.skipped_count} duplicate guests.` : ""),
         );
-        return;
+        void loadGuests(eventId);
       }
 
-      const existingKeys = new Set(guests.map(guestKey));
-      const importKeys = new Set<string>();
-      const uniqueGuests = importedGuests.filter((guest) => {
-        const key = guestKey(guest);
-
-        if (existingKeys.has(key) || importKeys.has(key)) return false;
-
-        importKeys.add(key);
-        return true;
-      });
-
-      if (uniqueGuests.length === 0) {
-        setImportMessage("All guests in this file are already in the list.");
-        return;
-      }
-
-      const created = await createGuests(selectedEventId, uniqueGuests);
-      const skippedCount = importedGuests.length - uniqueGuests.length;
-
-      await logAction({
+      void logAction({
         action: "guest.import",
         entityType: "Event",
-        entityId: selectedEventId,
+        entityId: eventId,
         details: `Imported ${created.length} guests from ${file.name}`,
-      });
-
-      setImportMessage(
-        `Imported ${created.length} guests from ${file.name}.` +
-          (skippedCount ? ` Skipped ${skippedCount} duplicate guests.` : ""),
-      );
-      loadGuests();
+      }).catch(() => {});
     } catch (error) {
-      setImportMessage(
-        error instanceof Error ? error.message : "Could not import guests.",
-      );
-    } finally {
-      setImporting(false);
-
-      if (importInputRef.current) {
-        importInputRef.current.value = "";
+      if (mounted.current && selectedEventIdRef.current === eventId) {
+        setImportMessageIsError(true);
+        setImportMessage(error instanceof Error ? error.message : "Could not import guests.");
       }
+    } finally {
+      importInFlight.current = false;
+      if (mounted.current) setImporting(false);
+
+      if (importInput) importInput.value = "";
     }
   };
 
@@ -185,12 +234,12 @@ export function GuestListView({ events }: { events: DashboardEvent[] }) {
         action={
           <button
             className="btn-gold"
-            disabled={!selectedEventId}
+            disabled={!selectedEventId || loadingGuests || importing || guests.length >= MAX_EVENT_GUESTS}
             style={{
               padding: "10px 18px",
               borderRadius: 8,
               fontSize: 14,
-              opacity: selectedEventId ? 1 : 0.55,
+              opacity: selectedEventId && !loadingGuests && !importing && guests.length < MAX_EVENT_GUESTS ? 1 : 0.55,
             }}
             onClick={() => {
               setEditGuest(null);
@@ -220,10 +269,7 @@ export function GuestListView({ events }: { events: DashboardEvent[] }) {
           </span>
           <select
             value={selectedEventId}
-            onChange={(event) => {
-              setSelectedEventId(event.target.value);
-              setImportMessage("");
-            }}
+            onChange={(event) => selectEvent(event.target.value)}
             style={{
               height: 38,
               borderRadius: 8,
@@ -265,6 +311,15 @@ export function GuestListView({ events }: { events: DashboardEvent[] }) {
             </Link>
           )}
         </div>
+      </div>
+
+      <div className="card-base" style={{ padding: 16, marginBottom: 16 }}>
+        <p style={{ color: "var(--foreground)", fontSize: 14, fontWeight: 600, margin: 0 }}>
+          {loadingGuests ? "Loading guest count…" : `${guests.length} / ${MAX_EVENT_GUESTS} guests`}
+        </p>
+        <p style={{ color: "var(--muted-foreground)", fontSize: 12, lineHeight: 1.6, margin: "6px 0 0" }}>
+          Each event supports up to {MAX_EVENT_GUESTS} guests and {MAX_EVENT_GUESTS} personalised cards. Import skips duplicates and must fit the remaining spaces. You can still edit existing guests when the limit is reached.
+        </p>
       </div>
 
       <div className="card-base" style={{ overflow: "hidden" }}>
@@ -357,12 +412,13 @@ export function GuestListView({ events }: { events: DashboardEvent[] }) {
 
         {importMessage && (
           <div
+            role={importMessageIsError ? "alert" : "status"}
             style={{
               margin: "14px 16px 0",
               border: "1px solid rgba(201,168,76,0.18)",
               borderRadius: 8,
               padding: "10px 12px",
-              color: "var(--muted-foreground)",
+              color: importMessageIsError ? "var(--destructive)" : "var(--muted-foreground)",
               fontSize: 13,
               background: "rgba(255,255,255,0.03)",
             }}
@@ -372,7 +428,7 @@ export function GuestListView({ events }: { events: DashboardEvent[] }) {
         )}
 
         {guestError && (
-          <div style={{ padding: 16, color: "#ff6b6b", fontSize: 14 }}>
+          <div role="alert" style={{ padding: 16, color: "var(--destructive)", fontSize: 14 }}>
             {guestError}
           </div>
         )}

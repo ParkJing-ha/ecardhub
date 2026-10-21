@@ -1222,7 +1222,7 @@ export default function LandingPage() {
             className="text-base max-w-2xl mx-auto mb-10"
             style={{ color: "var(--muted-foreground)", lineHeight: 1.85 }}
           >
-            EcardHub was designed to make beautiful digital invitations
+            apexecard was designed to make beautiful digital invitations
             accessible to everyone — from families celebrating milestones to
             corporations hosting conferences. With full Swahili localization,
             mobile money payment support, and offline-friendly SMS delivery, we

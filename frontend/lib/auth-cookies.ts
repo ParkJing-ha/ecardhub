@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 
-export const ACCESS_TOKEN_COOKIE = "ecardhub_access";
-export const REFRESH_TOKEN_COOKIE = "ecardhub_refresh";
+export const ACCESS_TOKEN_COOKIE = "apexecard_access";
+export const REFRESH_TOKEN_COOKIE = "apexecard_refresh";
 
 const baseCookieOptions = {
   httpOnly: true,

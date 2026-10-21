@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { deleteEvent } from "@/lib/data";
 import type { Event, View } from "../types";
 import { Icon, icons } from "../icons";
@@ -10,10 +11,14 @@ import { categoryEmoji, categoryGradient } from "../category";
 export function EventsView({
   events,
   setView,
+  onViewGuests,
+  onSendEvent,
   onDeleted,
 }: {
   events: Event[];
   setView: (v: View) => void;
+  onViewGuests: (eventId: string) => void;
+  onSendEvent: (eventId: string) => void;
   onDeleted: (eventId: string) => void;
 }) {
   const isMobile = useIsMobile();
@@ -201,7 +206,7 @@ export function EventsView({
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                  setView("guests");
+                    onViewGuests(ev.id);
                 }}
               >
                   Guests
@@ -218,12 +223,13 @@ export function EventsView({
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setView("send");
+                    onSendEvent(ev.id);
                   }}
                 >
                   Send Invites
                 </button>
-                <button
+                <Link
+                  href={`/events/${ev.id}`}
                   className="btn-outline"
                   style={{
                     padding: "9px 14px",
@@ -239,33 +245,12 @@ export function EventsView({
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    router.push(`/card-builder/${ev.id}`);
                   }}
                 >
                   Cards
-                </button>
+                </Link>
                 {/* ← Button mpya ya "Manage" */}
-                <button
-                  className="btn-outline"
-                  style={{
-                    padding: "9px 14px",
-                    borderRadius: 8,
-                    fontSize: 12,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 4,
-                    minWidth: 0,
-                    whiteSpace: "normal",
-                    lineHeight: 1.2,
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    router.push(`/events/${ev.id}`);
-                  }}
-                >
-                  Manage
-                </button>
+
                 <button
                   className="btn-outline"
                   style={{

@@ -25,6 +25,7 @@ export type TemplateLayout = "centered" | "split" | "frame" | "minimal";
 
 export interface Template {
   id: string;
+  event?: string | number | null;
   name: string;
   category: TemplateCategory;
   style: TemplateStyle;
@@ -182,27 +183,17 @@ export function allTemplates(dbTemplates: Template[] = []): Template[] {
 }
 
 export interface PackageOption {
+  id: string;
   name: string;
-  price: number;
   desc: string;
 }
 
 export const PACKAGES: PackageOption[] = [
-  {
-    name: "WhatsApp Only",
-    price: 150,
-    desc: "Digital card delivered via WhatsApp with embedded QR code.",
-  },
-  {
-    name: "WhatsApp + SMS",
-    price: 300,
-    desc: "WhatsApp card plus SMS invitation carrying a unique ID.",
-  },
-  {
-    name: "Full Package",
-    price: 500,
-    desc: "WhatsApp, SMS, email reminders and full RSVP tracking.",
-  },
+  { id: "sms", name: "SMS", desc: "Normal SMS with the event text details only." },
+  { id: "sms_whatsapp", name: "SMS + WhatsApp", desc: "Card and event information on WhatsApp, plus event text details by SMS." },
+  { id: "whatsapp", name: "WhatsApp only", desc: "Invitation card, template, and event information on WhatsApp." },
+  { id: "email", name: "Email", desc: "Invitation delivered by email only." },
+  { id: "sms_whatsapp_email", name: "SMS + WhatsApp + Email", desc: "All channels: WhatsApp card, SMS event details, and email invitation." },
 ];
 
 export function generateCode(prefix = "INV"): string {

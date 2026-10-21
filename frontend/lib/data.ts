@@ -53,9 +53,19 @@ export interface Invitation {
   status: string;
   rsvp_status: string;
   customized_text?: string;
+  qr_svg?: string;
+  qr_image_data_url?: string;
+  card_svg?: string;
+  has_card_artifact?: boolean;
+  card_snapshot?: {
+    event: Partial<Event>;
+    guest: Partial<Guest>;
+    template: Partial<Template>;
+  };
 }
 
 type ApiGuest = Omit<Guest, "event_id"> & { event?: string | number };
+type ApiTemplate = Omit<Template, "id"> & { id: string | number };
 type ApiInvitation = Omit<Invitation, "event_id" | "guest_id"> & {
   event?: string | number;
   guest?: string | number;
@@ -104,11 +114,15 @@ async function readJsonResponse<T>(
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
+    const rowErrors = Array.isArray(data?.errors) ? data.errors.slice(0, 5).map((entry: { row?: number; fields?: Record<string, unknown> }) => {
+      const fields = Object.entries(entry.fields ?? {}).map(([field, messages]) => `${field}: ${Array.isArray(messages) ? messages.join(" ") : String(messages)}`).join("; ");
+      return `${entry.row ? `Guest row ${entry.row}` : "Guest data"}: ${fields}`;
+    }).join(" ") : "";
     const message =
       [data?.error, data?.detail].filter(Boolean).join(" ") ||
       Object.values(data ?? {}).flat().join(" ") ||
       fallbackMessage;
-    throw new Error(String(message));
+    throw new Error([String(message), rowErrors, Array.isArray(data?.errors) && data.errors.length > 5 ? `And ${data.errors.length - 5} more invalid rows.` : ""].filter(Boolean).join(" "));
   }
 
   return data as T;
@@ -261,7 +275,11 @@ export async function getTemplates(eventId?: string): Promise<Template[]> {
     method: "GET",
     cache: "no-store",
   });
-  return readJsonResponse<Template[]>(response, "Failed to fetch templates.");
+  const templates = await readJsonResponse<ApiTemplate[]>(
+    response,
+    "Failed to fetch templates.",
+  );
+  return templates.map((template) => ({ ...template, id: String(template.id) }));
 }
 
 export async function getInvitations(eventId: string): Promise<Invitation[]> {
@@ -276,6 +294,16 @@ export async function getInvitations(eventId: string): Promise<Invitation[]> {
   return invitations.map((invitation) =>
     normalizeInvitation(invitation, eventId),
   );
+}
+
+/** Load the completed artifact only when a card is opened, keeping bulk lists small. */
+export async function getInvitation(eventId: string, invitationId: string): Promise<Invitation> {
+  const response = await appFetch(`/api/events/${eventId}/invitations/${invitationId}`, {
+    method: "GET",
+    cache: "no-store",
+  });
+  const invitation = await readJsonResponse<ApiInvitation>(response, "Failed to load this card.");
+  return normalizeInvitation(invitation, eventId);
 }
 
 export async function createGuest(
@@ -320,60 +348,21 @@ export async function deleteGuest(eventId: string, id: string): Promise<void> {
   }
 }
 
-export interface CreateInvitationInput {
-  event_id: string;
-  guest_id: string;
-  guest_name: string;
-  guest_phone?: string;
-  template_id: string;
-  channel: string;
-  package: string;
-  customized_text?: string;
-}
-
-/** Generate one invitation record per guest who doesn't already have one. */
-export async function generateInvitations(
+/** The backend combines saved event, design and guest data and assigns card IDs. */
+export async function generateEventCards(
   eventId: string,
-  guests: Guest[],
-  existing: Invitation[],
-  input: Omit<CreateInvitationInput, "guest_id" | "guest_name" | "guest_phone">,
-): Promise<Invitation[]> {
-  const have = new Set(existing.map((i) => i.guest_id));
-  const toCreate = guests.filter((g) => !have.has(g.id));
-
-  const records = toCreate.map((g) => {
-    const code = generateCode("INV");
-    return {
-      guest_id: g.id,
-      guest_name: g.full_name,
-      guest_phone: g.phone,
-      invitation_code: code,
-      qr_data: code,
-      template_id: input.template_id,
-      channel: input.channel,
-      package: input.package,
-      status: "draft",
-      rsvp_status: "pending",
-      customized_text: input.customized_text,
-    };
-  });
-
-  if (records.length === 0) {
-    return [];
-  }
-
-  const response = await appFetch(`/api/events/${eventId}/invitations`, {
+  input: { guest_ids: string[]; template_id: string },
+): Promise<{ invitations: Invitation[]; created_count: number; existing_count: number }> {
+  const response = await appFetch(`/api/events/${eventId}/invitations/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(records),
+    body: JSON.stringify(input),
   });
-  const invitations = await readJsonResponse<ApiInvitation[]>(
+  const result = await readJsonResponse<{ invitations: ApiInvitation[]; created_count: number; existing_count: number }>(
     response,
     "Failed to generate invitations.",
   );
-  return invitations.map((invitation) =>
-    normalizeInvitation(invitation, eventId),
-  );
+  return { ...result, invitations: result.invitations.map((invitation) => normalizeInvitation(invitation, eventId)) };
 }
 
 /** Load everything an event detail page needs in one round-trip. */
@@ -408,12 +397,12 @@ export async function loadEventDetail(eventId: string): Promise<{
     ushers,
     templates,
   ] = await Promise.all([
-    getGuests(eventId).catch(() => []),
-    getInvitations(eventId).catch(() => []),
-    getContributions(eventId).catch(() => []),
-    getCheckins(eventId).catch(() => []),
-    getUshers(eventId).catch(() => []),
-    getTemplates(eventId).catch(() => []),
+    getGuests(eventId),
+    getInvitations(eventId),
+    getContributions(eventId),
+    getCheckins(eventId),
+    getUshers(eventId),
+    getTemplates(eventId),
   ]);
   const tplMap: Record<string, Template> = {};
   allTemplates(templates).forEach((t) => (tplMap[t.id] = t));
@@ -588,7 +577,8 @@ export async function createCustomTemplate(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return readJsonResponse<Template>(response, "Failed to save template.");
+  const template = await readJsonResponse<ApiTemplate>(response, "Failed to save template.");
+  return { ...template, id: String(template.id) };
 }
 
 // --- Invitations ----------------------------------------------------------

@@ -1,0 +1,1055 @@
+{
+  "status": "FAILED_ON_TESTED_LOCAL_CONFIGURATION_NOT_PRODUCTION_CERTIFIED",
+  "date": "2026-10-10",
+  "git_head_base": "9b25374766fee26b34183e1a4155cdc341205142",
+  "working_tree_has_uncommitted_changes": true,
+  "load_script_sha256": "f3c6c959ab1368e452482cabdbec2277a78d2729fdcb0370874f6dfded427529",
+  "workload": {
+    "users_baseline": 100,
+    "users_concurrent": 1000,
+    "guests_per_user": 500,
+    "batch_size": 100,
+    "target_fresh_cards_concurrent": 500000,
+    "full_artifacts_requested_per_finished_workflow": 1,
+    "uploaded_png_bytes": 54132,
+    "fresh_fixture_sets": true,
+    "fixture_population_prepared_before_baseline": true,
+    "warmup_distinct_fresh_users": 5,
+    "sequence": [
+      "warmup_5",
+      "baseline_100",
+      "concurrent_1000"
+    ],
+    "iterations_per_user": 1
+  },
+  "acceptance": {
+    "workflow_p95_ms": 30000,
+    "batch_p95_ms": 2000,
+    "artifact_p95_ms": 2000,
+    "max_unexpected_error_rate_exclusive": 0.01,
+    "no_degradation_baseline_p95_ms": 28962.4,
+    "requires_all_workflows_and_fresh_card_counts": true
+  },
+  "runtime": {
+    "next": "16.3.8",
+    "postgres": "18",
+    "gunicorn_workers_per_replica": 2,
+    "threads_per_worker": 4,
+    "pool_max_per_worker": 4,
+    "backend_replicas": 4,
+    "frontend_replicas": 2,
+    "database_application_connection_budget": 32,
+    "postgres_max_connections": 100,
+    "postgres_shared_buffers": "128MB",
+    "postgres_wal_buffers": "4MB",
+    "container_memory_limit_mib": {
+      "database": 512,
+      "backend_each": 384,
+      "frontend_each": 384,
+      "proxy": 128
+    },
+    "edge_bind": "127.0.0.1:18081",
+    "transport": "isolated local HTTP, synthetic authenticated access cookies",
+    "generator": "k6 v1.6.0+dirty, commit d97957fc61, go1.25.6, linux/amd64",
+    "logical_cpus": 4,
+    "host_memory_mib": 7823.296875,
+    "host_swap_mib": 9168.9921875,
+    "generator_shares_host_with_servers_and_development": true,
+    "isolated_database_final_bytes": 478328511
+  },
+  "methodology": {
+    "edge_intervals": "Docker log publication timestamp minus Nginx request_time estimates request start; intervals sorted by time with ends before starts. This measures edge in-flight requests, including queued/waiting requests, not simultaneous backend execution.",
+    "edge_precision_limit": "Nginx durations are rounded to milliseconds; Docker publication timestamps include unknown logging delay. Raw interval peaks can exceed VUs by one. Distinct-event overlap also reported.",
+    "cpu_units": "100 percent denotes one logical CPU; workstation has four. Generator averages and maxima derive CPU-seconds deltas over sampled wall-clock intervals, not continuous profiling.",
+    "container_memory": "Docker stats MemUsage converted to MiB; cgroup working memory estimate, not per-process RSS. Container CPU/memory peak pairs may occur at different times; stack CPU totals are summed only within each sample.",
+    "sampling": "Resource sample timestamps are recorded before blocking docker stats and optional SQL collection; CPU, memory and SQL values within a sample are not exactly simultaneous. SQL collected every third resource sample. Values are observed sample maxima/minima, not continuous extrema.",
+    "database_probe": "Connection/active/wait counts include one monitoring SQL session. CPU wait label means wait_event_type is NULL, not measured CPU utilization. LWLock events were not collected individually; lock_waits only counts heavyweight Lock waits.",
+    "attempt_timing": "For the 1000-user run, workflow duration measures failed partial attempts, not completion of 500 cards; zero workflows completed and zero artifact HTTP requests ran.",
+    "interpretation": "No measured generator CPU/RSS exhaustion, generator swap, guard abort, container OOM or restart. Host load and swap growth plus high aggregate application CPU indicate shared-host pressure; exact CPU vs I/O bottleneck is not isolated by these samples."
+  },
+  "runs": {
+    "baseline-100": {
+      "users": 100,
+      "start_utc": "2026-10-10T14:49:27.842513+00:00",
+      "end_utc": "2026-10-10T14:50:00.894524+00:00",
+      "elapsed_seconds": 33.052011,
+      "k6_exit_code": 99,
+      "guard_aborted": null,
+      "resource_samples": 8,
+      "edge": {
+        "generation": {
+          "requests": 500,
+          "status_counts": {
+            "201": 500
+          },
+          "raw_peak_overlapping_requests": 101,
+          "raw_peak_utc": "2026-10-10T14:49:30.038263+00:00",
+          "peak_distinct_events_in_flight": 100,
+          "distinct_peak_utc": "2026-10-10T14:49:28.555594+00:00",
+          "request_duration": {
+            "mean_seconds": 4.832942,
+            "p50_seconds": 4.711,
+            "p95_seconds": 7.577549999999999,
+            "p99_seconds": 8.129119999999999,
+            "max_seconds": 9.045
+          },
+          "duration_by_status": {
+            "201": {
+              "requests": 500,
+              "mean_seconds": 4.832942,
+              "p50_seconds": 4.711,
+              "p95_seconds": 7.577549999999999,
+              "p99_seconds": 8.129119999999999,
+              "max_seconds": 9.045
+            }
+          }
+        },
+        "artifact": {
+          "requests": 100,
+          "status_counts": {
+            "200": 100
+          },
+          "raw_peak_overlapping_requests": 40,
+          "raw_peak_utc": "2026-10-10T14:49:53.268469+00:00",
+          "peak_distinct_events_in_flight": 40,
+          "distinct_peak_utc": "2026-10-10T14:49:53.268469+00:00",
+          "request_duration": {
+            "mean_seconds": 2.04882,
+            "p50_seconds": 1.731,
+            "p95_seconds": 5.1008499999999986,
+            "p99_seconds": 5.929690000000001,
+            "max_seconds": 6.196
+          },
+          "duration_by_status": {
+            "200": {
+              "requests": 100,
+              "mean_seconds": 2.04882,
+              "p50_seconds": 1.731,
+              "p95_seconds": 5.1008499999999986,
+              "p99_seconds": 5.929690000000001,
+              "max_seconds": 6.196
+            }
+          }
+        }
+      },
+      "edge_log_unparsed_lines": 0,
+      "generator": {
+        "peak_sampled_rss_mib": 308.2109375,
+        "peak_observed_hwm_mib": 308.2109375,
+        "peak_sampled_swap_mib": 0.0,
+        "cpu_seconds_at_last_sample": 7.02,
+        "sampled_average_cpu_percent": 23.066950899875057,
+        "peak_sample_interval_cpu_percent": 30.695072152609843,
+        "cpu_intervals": [
+          {
+            "start_utc": "2026-10-10T14:49:27.843051+00:00",
+            "end_utc": "2026-10-10T14:49:32.110837+00:00",
+            "cpu_percent": 30.695072152609843
+          },
+          {
+            "start_utc": "2026-10-10T14:49:32.110837+00:00",
+            "end_utc": "2026-10-10T14:49:35.964268+00:00",
+            "cpu_percent": 27.767462393258054
+          },
+          {
+            "start_utc": "2026-10-10T14:49:35.964268+00:00",
+            "end_utc": "2026-10-10T14:49:39.757139+00:00",
+            "cpu_percent": 21.883159230934698
+          },
+          {
+            "start_utc": "2026-10-10T14:49:39.757139+00:00",
+            "end_utc": "2026-10-10T14:49:45.559735+00:00",
+            "cpu_percent": 21.025071892129176
+          },
+          {
+            "start_utc": "2026-10-10T14:49:45.559735+00:00",
+            "end_utc": "2026-10-10T14:49:49.710981+00:00",
+            "cpu_percent": 20.475780869371658
+          },
+          {
+            "start_utc": "2026-10-10T14:49:49.710981+00:00",
+            "end_utc": "2026-10-10T14:49:53.851876+00:00",
+            "cpu_percent": 24.87384896500051
+          },
+          {
+            "start_utc": "2026-10-10T14:49:53.851876+00:00",
+            "end_utc": "2026-10-10T14:49:58.276202+00:00",
+            "cpu_percent": 16.047642265697714
+          }
+        ],
+        "average_cpu_percent_after_first_interval": 21.82274164420143
+      },
+      "host": {
+        "minimum_sampled_available_mib": 1069.64453125,
+        "start_sampled_available_mib": 1647.03125,
+        "end_sampled_available_mib": 1069.64453125,
+        "start_sampled_swap_used_mib": 6591.0078125,
+        "end_sampled_swap_used_mib": 6739.109375,
+        "maximum_sampled_swap_used_mib": 6739.109375,
+        "swap_growth_end_mib": 148.1015625,
+        "swap_growth_peak_mib": 148.1015625,
+        "maximum_sampled_one_minute_loadavg": 10.95
+      },
+      "containers": {
+        "apexecard-loadtest-full-proxy-1": {
+          "peak_cpu_percent": 3.33,
+          "peak_memory_mib": 13.62
+        },
+        "apexecard-loadtest-full-frontend-1": {
+          "peak_cpu_percent": 46.84,
+          "peak_memory_mib": 112.2
+        },
+        "apexecard-loadtest-full-frontend-2": {
+          "peak_cpu_percent": 33.74,
+          "peak_memory_mib": 71.26
+        },
+        "apexecard-loadtest-full-backend-3": {
+          "peak_cpu_percent": 68.06,
+          "peak_memory_mib": 153.5
+        },
+        "apexecard-loadtest-full-backend-1": {
+          "peak_cpu_percent": 58.43,
+          "peak_memory_mib": 156.6
+        },
+        "apexecard-loadtest-full-backend-4": {
+          "peak_cpu_percent": 52.33,
+          "peak_memory_mib": 144.3
+        },
+        "apexecard-loadtest-full-backend-2": {
+          "peak_cpu_percent": 53.86,
+          "peak_memory_mib": 152.2
+        },
+        "apexecard-loadtest-full-db-1": {
+          "peak_cpu_percent": 105.08,
+          "peak_memory_mib": 290.0
+        }
+      },
+      "stack_resources_by_sample": [
+        {
+          "sample_time_utc": "2026-10-10T14:49:27.843051+00:00",
+          "stack_cpu_percent_sum": 271.07,
+          "stack_memory_mib_sum": 864.3299999999999
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:49:32.110837+00:00",
+          "stack_cpu_percent_sum": 295.44999999999993,
+          "stack_memory_mib_sum": 935.0100000000001
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:49:35.964268+00:00",
+          "stack_cpu_percent_sum": 317.86,
+          "stack_memory_mib_sum": 963.69
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:49:39.757139+00:00",
+          "stack_cpu_percent_sum": 301.90999999999997,
+          "stack_memory_mib_sum": 971.9000000000001
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:49:45.559735+00:00",
+          "stack_cpu_percent_sum": 273.49,
+          "stack_memory_mib_sum": 1020.23
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:49:49.710981+00:00",
+          "stack_cpu_percent_sum": 291.19,
+          "stack_memory_mib_sum": 1006.6099999999999
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:49:53.851876+00:00",
+          "stack_cpu_percent_sum": 185.56,
+          "stack_memory_mib_sum": 1073.97
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:49:58.276202+00:00",
+          "stack_cpu_percent_sum": 2.26,
+          "stack_memory_mib_sum": 1038.63
+        }
+      ],
+      "stack_peak_cpu_sample": {
+        "sample_time_utc": "2026-10-10T14:49:35.964268+00:00",
+        "stack_cpu_percent_sum": 317.86,
+        "stack_memory_mib_sum": 963.69
+      },
+      "stack_peak_memory_sample": {
+        "sample_time_utc": "2026-10-10T14:49:53.851876+00:00",
+        "stack_cpu_percent_sum": 185.56,
+        "stack_memory_mib_sum": 1073.97
+      },
+      "database": {
+        "sample_count": 3,
+        "maximum_connections_including_probe": 33,
+        "maximum_active_including_probe": 33,
+        "maximum_heavyweight_lock_waits": 0,
+        "maximum_by_wait_event_type": {
+          "CPU": 5,
+          "Client": 32,
+          "IO": 1,
+          "LWLock": 31
+        },
+        "snapshots": [
+          {
+            "connections": 33,
+            "active": 33,
+            "lock_waits": 0,
+            "waits": {
+              "CPU": 1,
+              "IO": 1,
+              "LWLock": 31
+            },
+            "database_bytes": 240555711,
+            "xact_commit": 612,
+            "xact_rollback": 0,
+            "blks_read": 13818,
+            "blks_hit": 6708208
+          },
+          {
+            "connections": 33,
+            "active": 5,
+            "lock_waits": 0,
+            "waits": {
+              "Client": 27,
+              "CPU": 5,
+              "IO": 1
+            },
+            "database_bytes": 265090751,
+            "xact_commit": 1756,
+            "xact_rollback": 0,
+            "blks_read": 21258,
+            "blks_hit": 8118257
+          },
+          {
+            "connections": 33,
+            "active": 1,
+            "lock_waits": 0,
+            "waits": {
+              "Client": 32,
+              "CPU": 1
+            },
+            "database_bytes": 280352447,
+            "xact_commit": 2847,
+            "xact_rollback": 0,
+            "blks_read": 21258,
+            "blks_hit": 9071351
+          }
+        ]
+      },
+      "container_oom_or_restarts": [
+        {
+          "name": "/apexecard-loadtest-full-proxy-1",
+          "oom_killed": false,
+          "restart_count": 0
+        },
+        {
+          "name": "/apexecard-loadtest-full-frontend-1",
+          "oom_killed": false,
+          "restart_count": 0
+        },
+        {
+          "name": "/apexecard-loadtest-full-frontend-2",
+          "oom_killed": false,
+          "restart_count": 0
+        },
+        {
+          "name": "/apexecard-loadtest-full-backend-3",
+          "oom_killed": false,
+          "restart_count": 0
+        },
+        {
+          "name": "/apexecard-loadtest-full-backend-1",
+          "oom_killed": false,
+          "restart_count": 0
+        },
+        {
+          "name": "/apexecard-loadtest-full-backend-4",
+          "oom_killed": false,
+          "restart_count": 0
+        },
+        {
+          "name": "/apexecard-loadtest-full-backend-2",
+          "oom_killed": false,
+          "restart_count": 0
+        },
+        {
+          "name": "/apexecard-loadtest-full-db-1",
+          "oom_killed": false,
+          "restart_count": 0
+        }
+      ],
+      "image_digests": [
+        "sha256:083bbd17d1a5d7511e84ce351f7d98d9eb7af0426b7a2443a3756e36cc378207",
+        "sha256:8d6ed4b5a1f44557313cab42a8951c53d1b86ccc899266bcee2ee1ee84076c14",
+        "sha256:d99b436d41d814af1039dca17da62dfb0dc49b7a64dc183a9a13f4cdb9863db1",
+        "sha256:dc73b49f5124cf2ee538dfbdfbd121f0b4ccdcb20fea30f3a81bd477c02e2bb5"
+      ],
+      "metrics": {
+        "http_reqs": {
+          "count": 600,
+          "rate": 20.26524487909851
+        },
+        "checks": {
+          "rate": 1,
+          "passes": 1100,
+          "fails": 0
+        },
+        "vus_max": {
+          "value": 100,
+          "min": 100,
+          "max": 100
+        },
+        "card_workflows_completed": {
+          "count": 100,
+          "rate": 3.377540813183085
+        },
+        "iterations": {
+          "count": 100,
+          "rate": 3.377540813183085
+        },
+        "cards_created": {
+          "count": 50000,
+          "rate": 1688.7704065915425
+        },
+        "data_received": {
+          "count": 94308189,
+          "rate": 3185297.5736488407
+        },
+        "card_artifact_ms": {
+          "med": 1744.9485255,
+          "p(95)": 5116.371366449999,
+          "p(99)": 5935.534839100002,
+          "max": 6209.980669,
+          "avg": 2055.8325421900004
+        },
+        "card_batch_ms": {
+          "avg": 4842.544842712001,
+          "med": 4714.4349485,
+          "p(95)": 7585.526913399999,
+          "p(99)": 8137.614066049998,
+          "max": 9048.056626
+        },
+        "iteration_duration": {
+          "avg": 26488.752768550003,
+          "med": 26641.241278499998,
+          "p(95)": 28963.8877146,
+          "p(99)": 29280.29466621,
+          "max": 29430.054858
+        },
+        "data_sent": {
+          "count": 617623,
+          "rate": 20860.468896605766
+        },
+        "card_workflow_ms": {
+          "avg": 26457.01,
+          "med": 26628.5,
+          "p(95)": 28962.4,
+          "p(99)": 29262.13,
+          "max": 29275
+        },
+        "card_workflow_failed": {
+          "rate": 0,
+          "sample_count": 100
+        },
+        "http_req_failed": {
+          "rate": 0,
+          "sample_count": 600
+        }
+      },
+      "k6_threshold_outcomes": {
+        "checks": {
+          "rate==1": {
+            "ok": true
+          }
+        },
+        "card_workflows_completed": {
+          "count==100": {
+            "ok": true
+          }
+        },
+        "cards_created": {
+          "count==50000": {
+            "ok": true
+          }
+        },
+        "card_artifact_ms": {
+          "p(95)<=2000": {
+            "ok": false
+          }
+        },
+        "card_batch_ms": {
+          "p(95)<=2000": {
+            "ok": false
+          }
+        },
+        "card_workflow_ms": {
+          "p(95)<=30000": {
+            "ok": true
+          }
+        },
+        "card_workflow_failed": {
+          "rate<0.01": {
+            "ok": true
+          }
+        },
+        "http_req_failed": {
+          "rate<0.01": {
+            "ok": true
+          }
+        }
+      },
+      "persisted_verification": {
+        "passed": true,
+        "events": 100,
+        "cards": 50000,
+        "completed_events": 100
+      },
+      "all_thresholds_passed": false
+    },
+    "concurrent-1000": {
+      "users": 1000,
+      "start_utc": "2026-10-10T14:50:24.801211+00:00",
+      "end_utc": "2026-10-10T14:51:34.079076+00:00",
+      "elapsed_seconds": 69.277865,
+      "k6_exit_code": 99,
+      "guard_aborted": null,
+      "resource_samples": 14,
+      "edge": {
+        "generation": {
+          "requests": 1376,
+          "status_counts": {
+            "201": 376,
+            "499": 793,
+            "503": 207
+          },
+          "raw_peak_overlapping_requests": 1001,
+          "raw_peak_utc": "2026-10-10T14:50:40.421819+00:00",
+          "peak_distinct_events_in_flight": 1000,
+          "distinct_peak_utc": "2026-10-10T14:50:31.613885+00:00",
+          "request_duration": {
+            "mean_seconds": 30.148643895348837,
+            "p50_seconds": 34.87,
+            "p95_seconds": 35.001,
+            "p99_seconds": 35.007,
+            "max_seconds": 35.143
+          },
+          "duration_by_status": {
+            "201": {
+              "requests": 376,
+              "mean_seconds": 19.150271276595745,
+              "p50_seconds": 19.734,
+              "p95_seconds": 32.0605,
+              "p99_seconds": 33.16475,
+              "max_seconds": 33.425
+            },
+            "499": {
+              "requests": 793,
+              "mean_seconds": 34.94130012610341,
+              "p50_seconds": 34.982,
+              "p95_seconds": 35.003,
+              "p99_seconds": 35.012,
+              "max_seconds": 35.143
+            },
+            "503": {
+              "requests": 207,
+              "mean_seconds": 31.766091787439613,
+              "p50_seconds": 31.488,
+              "p95_seconds": 34.791599999999995,
+              "p99_seconds": 34.96318,
+              "max_seconds": 34.973
+            }
+          }
+        },
+        "artifact": {
+          "requests": 0,
+          "status_counts": {}
+        }
+      },
+      "edge_log_unparsed_lines": 0,
+      "generator": {
+        "peak_sampled_rss_mib": 745.96484375,
+        "peak_observed_hwm_mib": 745.96484375,
+        "peak_sampled_swap_mib": 0.0,
+        "cpu_seconds_at_last_sample": 11.97,
+        "sampled_average_cpu_percent": 18.33024876113198,
+        "peak_sample_interval_cpu_percent": 86.42415448361918,
+        "cpu_intervals": [
+          {
+            "start_utc": "2026-10-10T14:50:24.801750+00:00",
+            "end_utc": "2026-10-10T14:50:31.848391+00:00",
+            "cpu_percent": 86.42415448361918
+          },
+          {
+            "start_utc": "2026-10-10T14:50:31.848391+00:00",
+            "end_utc": "2026-10-10T14:50:36.451810+00:00",
+            "cpu_percent": 10.209803141038243
+          },
+          {
+            "start_utc": "2026-10-10T14:50:36.451810+00:00",
+            "end_utc": "2026-10-10T14:50:40.948035+00:00",
+            "cpu_percent": 8.896351704944214
+          },
+          {
+            "start_utc": "2026-10-10T14:50:40.948035+00:00",
+            "end_utc": "2026-10-10T14:50:46.067869+00:00",
+            "cpu_percent": 26.75868034761811
+          },
+          {
+            "start_utc": "2026-10-10T14:50:46.067869+00:00",
+            "end_utc": "2026-10-10T14:50:49.960403+00:00",
+            "cpu_percent": 16.698633770886563
+          },
+          {
+            "start_utc": "2026-10-10T14:50:49.960403+00:00",
+            "end_utc": "2026-10-10T14:50:55.418316+00:00",
+            "cpu_percent": 12.458974881603494
+          },
+          {
+            "start_utc": "2026-10-10T14:50:55.418316+00:00",
+            "end_utc": "2026-10-10T14:51:00.837827+00:00",
+            "cpu_percent": 29.707476860863203
+          },
+          {
+            "start_utc": "2026-10-10T14:51:00.837827+00:00",
+            "end_utc": "2026-10-10T14:51:05.462053+00:00",
+            "cpu_percent": 6.703824461560761
+          },
+          {
+            "start_utc": "2026-10-10T14:51:05.462053+00:00",
+            "end_utc": "2026-10-10T14:51:09.934628+00:00",
+            "cpu_percent": 2.683018202293784
+          },
+          {
+            "start_utc": "2026-10-10T14:51:09.934628+00:00",
+            "end_utc": "2026-10-10T14:51:16.528760+00:00",
+            "cpu_percent": 1.0615498835518162
+          },
+          {
+            "start_utc": "2026-10-10T14:51:16.528760+00:00",
+            "end_utc": "2026-10-10T14:51:20.808821+00:00",
+            "cpu_percent": 1.4018491771083441
+          },
+          {
+            "start_utc": "2026-10-10T14:51:20.808821+00:00",
+            "end_utc": "2026-10-10T14:51:24.953288+00:00",
+            "cpu_percent": 1.930284347116506
+          },
+          {
+            "start_utc": "2026-10-10T14:51:24.953288+00:00",
+            "end_utc": "2026-10-10T14:51:30.103646+00:00",
+            "cpu_percent": 1.1649675701516524
+          }
+        ],
+        "average_cpu_percent_after_first_interval": 10.09351002175659
+      },
+      "host": {
+        "minimum_sampled_available_mib": 815.62109375,
+        "start_sampled_available_mib": 1385.1875,
+        "end_sampled_available_mib": 1282.73046875,
+        "start_sampled_swap_used_mib": 6738.2421875,
+        "end_sampled_swap_used_mib": 7584.5078125,
+        "maximum_sampled_swap_used_mib": 7584.5078125,
+        "swap_growth_end_mib": 846.265625,
+        "swap_growth_peak_mib": 846.265625,
+        "maximum_sampled_one_minute_loadavg": 20.04
+      },
+      "containers": {
+        "apexecard-loadtest-full-proxy-1": {
+          "peak_cpu_percent": 12.31,
+          "peak_memory_mib": 31.46
+        },
+        "apexecard-loadtest-full-frontend-1": {
+          "peak_cpu_percent": 77.63,
+          "peak_memory_mib": 163.9
+        },
+        "apexecard-loadtest-full-frontend-2": {
+          "peak_cpu_percent": 76.8,
+          "peak_memory_mib": 127.9
+        },
+        "apexecard-loadtest-full-backend-3": {
+          "peak_cpu_percent": 56.59,
+          "peak_memory_mib": 158.8
+        },
+        "apexecard-loadtest-full-backend-1": {
+          "peak_cpu_percent": 47.07,
+          "peak_memory_mib": 159.7
+        },
+        "apexecard-loadtest-full-backend-4": {
+          "peak_cpu_percent": 90.85,
+          "peak_memory_mib": 161.6
+        },
+        "apexecard-loadtest-full-backend-2": {
+          "peak_cpu_percent": 52.82,
+          "peak_memory_mib": 169.8
+        },
+        "apexecard-loadtest-full-db-1": {
+          "peak_cpu_percent": 67.26,
+          "peak_memory_mib": 282.1
+        }
+      },
+      "stack_resources_by_sample": [
+        {
+          "sample_time_utc": "2026-10-10T14:50:24.801750+00:00",
+          "stack_cpu_percent_sum": 82.28,
+          "stack_memory_mib_sum": 962.95
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:50:31.848391+00:00",
+          "stack_cpu_percent_sum": 192.64999999999998,
+          "stack_memory_mib_sum": 1031.21
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:50:36.451810+00:00",
+          "stack_cpu_percent_sum": 231.72,
+          "stack_memory_mib_sum": 1125.97
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:50:40.948035+00:00",
+          "stack_cpu_percent_sum": 282.23,
+          "stack_memory_mib_sum": 1092.4500000000003
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:50:46.067869+00:00",
+          "stack_cpu_percent_sum": 271.78,
+          "stack_memory_mib_sum": 1143.62
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:50:49.960403+00:00",
+          "stack_cpu_percent_sum": 273.13,
+          "stack_memory_mib_sum": 1154.13
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:50:55.418316+00:00",
+          "stack_cpu_percent_sum": 219.96999999999997,
+          "stack_memory_mib_sum": 1150.69
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:51:00.837827+00:00",
+          "stack_cpu_percent_sum": 321.94,
+          "stack_memory_mib_sum": 1164.31
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:51:05.462053+00:00",
+          "stack_cpu_percent_sum": 93.10000000000001,
+          "stack_memory_mib_sum": 1133.43
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:51:09.934628+00:00",
+          "stack_cpu_percent_sum": 232.41000000000003,
+          "stack_memory_mib_sum": 1136.91
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:51:16.528760+00:00",
+          "stack_cpu_percent_sum": 287.83,
+          "stack_memory_mib_sum": 1176.3899999999999
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:51:20.808821+00:00",
+          "stack_cpu_percent_sum": 219.54,
+          "stack_memory_mib_sum": 1190.77
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:51:24.953288+00:00",
+          "stack_cpu_percent_sum": 181.07,
+          "stack_memory_mib_sum": 1144.3
+        },
+        {
+          "sample_time_utc": "2026-10-10T14:51:30.103646+00:00",
+          "stack_cpu_percent_sum": 131.76,
+          "stack_memory_mib_sum": 1120.188
+        }
+      ],
+      "stack_peak_cpu_sample": {
+        "sample_time_utc": "2026-10-10T14:51:00.837827+00:00",
+        "stack_cpu_percent_sum": 321.94,
+        "stack_memory_mib_sum": 1164.31
+      },
+      "stack_peak_memory_sample": {
+        "sample_time_utc": "2026-10-10T14:51:20.808821+00:00",
+        "stack_cpu_percent_sum": 219.54,
+        "stack_memory_mib_sum": 1190.77
+      },
+      "database": {
+        "sample_count": 5,
+        "maximum_connections_including_probe": 33,
+        "maximum_active_including_probe": 33,
+        "maximum_heavyweight_lock_waits": 0,
+        "maximum_by_wait_event_type": {
+          "CPU": 9,
+          "Client": 31,
+          "IO": 2,
+          "LWLock": 31,
+          "Timeout": 1
+        },
+        "snapshots": [
+          {
+            "connections": 33,
+            "active": 33,
+            "lock_waits": 0,
+            "waits": {
+              "CPU": 1,
+              "IO": 1,
+              "LWLock": 31
+            },
+            "database_bytes": 287323839,
+            "xact_commit": 3079,
+            "xact_rollback": 0,
+            "blks_read": 21449,
+            "blks_hit": 9154459
+          },
+          {
+            "connections": 33,
+            "active": 18,
+            "lock_waits": 0,
+            "waits": {
+              "Client": 14,
+              "CPU": 9,
+              "LWLock": 9,
+              "Timeout": 1
+            },
+            "database_bytes": 311793343,
+            "xact_commit": 3687,
+            "xact_rollback": 0,
+            "blks_read": 24959,
+            "blks_hit": 9989065
+          },
+          {
+            "connections": 33,
+            "active": 4,
+            "lock_waits": 0,
+            "waits": {
+              "Client": 31,
+              "CPU": 2
+            },
+            "database_bytes": 346748607,
+            "xact_commit": 4539,
+            "xact_rollback": 0,
+            "blks_read": 30022,
+            "blks_hit": 11087705
+          },
+          {
+            "connections": 33,
+            "active": 17,
+            "lock_waits": 0,
+            "waits": {
+              "Client": 16,
+              "CPU": 4,
+              "IO": 2,
+              "LWLock": 11
+            },
+            "database_bytes": 379598527,
+            "xact_commit": 5278,
+            "xact_rollback": 0,
+            "blks_read": 34416,
+            "blks_hit": 12080280
+          },
+          {
+            "connections": 33,
+            "active": 6,
+            "lock_waits": 0,
+            "waits": {
+              "Client": 28,
+              "CPU": 2,
+              "IO": 1,
+              "LWLock": 2
+            },
+            "database_bytes": 409458367,
+            "xact_commit": 6019,
+            "xact_rollback": 0,
+            "blks_read": 38856,
+            "blks_hit": 13082154
+          }
+        ]
+      },
+      "container_oom_or_restarts": [
+        {
+          "name": "/apexecard-loadtest-full-proxy-1",
+          "oom_killed": false,
+          "restart_count": 0
+        },
+        {
+          "name": "/apexecard-loadtest-full-frontend-1",
+          "oom_killed": false,
+          "restart_count": 0
+        },
+        {
+          "name": "/apexecard-loadtest-full-frontend-2",
+          "oom_killed": false,
+          "restart_count": 0
+        },
+        {
+          "name": "/apexecard-loadtest-full-backend-3",
+          "oom_killed": false,
+          "restart_count": 0
+        },
+        {
+          "name": "/apexecard-loadtest-full-backend-1",
+          "oom_killed": false,
+          "restart_count": 0
+        },
+        {
+          "name": "/apexecard-loadtest-full-backend-4",
+          "oom_killed": false,
+          "restart_count": 0
+        },
+        {
+          "name": "/apexecard-loadtest-full-backend-2",
+          "oom_killed": false,
+          "restart_count": 0
+        },
+        {
+          "name": "/apexecard-loadtest-full-db-1",
+          "oom_killed": false,
+          "restart_count": 0
+        }
+      ],
+      "image_digests": [
+        "sha256:083bbd17d1a5d7511e84ce351f7d98d9eb7af0426b7a2443a3756e36cc378207",
+        "sha256:8d6ed4b5a1f44557313cab42a8951c53d1b86ccc899266bcee2ee1ee84076c14",
+        "sha256:d99b436d41d814af1039dca17da62dfb0dc49b7a64dc183a9a13f4cdb9863db1",
+        "sha256:dc73b49f5124cf2ee538dfbdfbd121f0b4ccdcb20fea30f3a81bd477c02e2bb5"
+      ],
+      "metrics": {
+        "cards_created": {
+          "count": 37600,
+          "rate": 573.7863887145353
+        },
+        "vus_max": {
+          "value": 1000,
+          "min": 1000,
+          "max": 1000
+        },
+        "data_received": {
+          "count": 57585708,
+          "rate": 878773.8147577054
+        },
+        "card_workflows_completed": {
+          "count": 0,
+          "rate": 0
+        },
+        "card_artifact_ms": null,
+        "iteration_duration": {
+          "avg": 41716.573267843916,
+          "med": 35064.4051605,
+          "p(95)": 59741.3123127,
+          "p(99)": 63066.475800629996,
+          "max": 65278.435735
+        },
+        "iterations": {
+          "count": 1000,
+          "rate": 15.260276295599343
+        },
+        "card_workflow_failed": {
+          "rate": 1,
+          "sample_count": 1000
+        },
+        "data_sent": {
+          "count": 1543652,
+          "rate": 23556.556024254518
+        },
+        "checks": {
+          "rate": 0.27325581395348836,
+          "passes": 752,
+          "fails": 2000
+        },
+        "http_req_failed": {
+          "rate": 0.7267441860465116,
+          "sample_count": 1376
+        },
+        "http_reqs": {
+          "count": 1376,
+          "rate": 20.998140182744695
+        },
+        "card_batch_ms": {
+          "avg": 30179.23749213227,
+          "med": 34917.332447,
+          "p(95)": 35001.41352525,
+          "p(99)": 35004.11410675,
+          "max": 35017.829777
+        },
+        "card_workflow_ms": {
+          "max": 65275,
+          "avg": 41700.758,
+          "med": 35009,
+          "p(95)": 59726.6,
+          "p(99)": 63063.11
+        }
+      },
+      "k6_threshold_outcomes": {
+        "cards_created": {
+          "count==500000": {
+            "ok": false
+          }
+        },
+        "card_workflows_completed": {
+          "count==1000": {
+            "ok": false
+          }
+        },
+        "card_artifact_ms": {
+          "p(95)<=2000": {
+            "ok": true
+          }
+        },
+        "card_workflow_failed": {
+          "rate<0.01": {
+            "ok": false
+          }
+        },
+        "checks": {
+          "rate==1": {
+            "ok": false
+          }
+        },
+        "http_req_failed": {
+          "rate<0.01": {
+            "ok": false
+          }
+        },
+        "card_batch_ms": {
+          "p(95)<=2000": {
+            "ok": false
+          }
+        },
+        "card_workflow_ms": {
+          "p(95)<=30000": {
+            "ok": false
+          },
+          "p(95)<=28962.4": {
+            "ok": false
+          }
+        }
+      },
+      "persisted_verification": {
+        "passed": false,
+        "events": 1000,
+        "cards": 137600,
+        "completed_events": 0,
+        "event_card_count_distribution": {
+          "100": 624,
+          "200": 376
+        },
+        "distinct_card_ids": 137600,
+        "distinct_event_guest_pairs": 137600,
+        "qr_mismatches": 0,
+        "missing_generation_snapshots": 0,
+        "failure": "Event 1: missing or unexpected guest cards."
+      },
+      "full_artifact_metric_absent_because_no_artifact_requests": true,
+      "all_thresholds_passed": false
+    }
+  },
+  "limitations": [
+    "Single local burst, not sustained or soak validation.",
+    "Four CPUs were shared with active development and the generator. No generator saturation was observed, but this is not a dedicated production sizing environment.",
+    "Small 54,132-byte design; the separate 1,441,303-byte smoke run covered five users only.",
+    "One full artifact per successful workflow; no artifacts were requested during the failed 1000-user burst.",
+    "Secure browser login, public TLS, real delivery, all-card PNG/PDF exports and payment integration are outside this benchmark.",
+    "Full-run workflow p95 is time to failed partial attempt, not time to finish 500 cards.",
+    "Application throughput and exact PostgreSQL LWLock events were not isolated by the sampled metrics."
+  ],
+  "cleanup": {
+    "isolated_stack_removed": true,
+    "private_fixture_files_removed": true,
+    "development_database_used_for_fixtures": false
+  },
+  "branding_note": "Container labels use current branding; image digests and measured results describe the original benchmark run."
+}

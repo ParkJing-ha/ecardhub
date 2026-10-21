@@ -3,4 +3,8 @@ node_modules
 .git
 .env
 .env.local
+.env.*
+.data
+*.backup
+*.old
 npm-debug.log

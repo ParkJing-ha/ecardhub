@@ -206,6 +206,21 @@ class CardTemplate(models.Model):
         return self.name
 
 
+class CardGenerationSnapshot(models.Model):
+    """One immutable event/design snapshot shared by a batch of generated cards."""
+
+    event = models.ForeignKey(
+        Event, on_delete=models.CASCADE, related_name="card_generations",
+    )
+    template = models.ForeignKey(
+        CardTemplate, on_delete=models.SET_NULL, null=True,
+        related_name="card_generations",
+    )
+    event_data = models.JSONField()
+    template_data = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
 class Invitation(models.Model):
     event = models.ForeignKey(
         Event,
@@ -227,6 +242,11 @@ class Invitation(models.Model):
     status = models.CharField(max_length=20, default="draft")
     rsvp_status = models.CharField(max_length=20, default="pending")
     customized_text = models.TextField(blank=True)
+    card_generation = models.ForeignKey(
+        CardGenerationSnapshot, on_delete=models.RESTRICT,
+        null=True, blank=True, related_name="invitations",
+    )
+    guest_snapshot = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

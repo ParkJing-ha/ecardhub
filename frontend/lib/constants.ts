@@ -9,7 +9,15 @@ export const PAYMENT_METHODS = [
   "Mixx by Yas",
   "Card",
 ];
-export const DISPATCH_CHANNELS = ["WhatsApp", "SMS", "Email"];
+export const INVITATION_CHANNEL_OPTIONS = [
+  { value: "sms", label: "SMS", description: "Send the event text details by normal SMS only." },
+  { value: "sms_whatsapp", label: "SMS + WhatsApp", description: "Send the invitation card and event information on WhatsApp, plus the event text details by normal SMS." },
+  { value: "whatsapp", label: "WhatsApp only", description: "Send the invitation card, template, and event information on WhatsApp only." },
+  { value: "email", label: "Email", description: "Send the invitation by email only." },
+  { value: "sms_whatsapp_email", label: "SMS + WhatsApp + Email", description: "Send through all channels: invitation card and event information on WhatsApp, event text details by SMS, and an email invitation." },
+] as const;
+
+export const DISPATCH_CHANNELS = INVITATION_CHANNEL_OPTIONS.map(({ label }) => label);
 
 export function formatDate(
   value?: string | null,

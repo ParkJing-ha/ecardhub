@@ -1,4 +1,5 @@
 const DJANGO_API_URL = process.env.DJANGO_API_URL;
+const API_TIMEOUT_MS = Number(process.env.DJANGO_API_TIMEOUT_MS ?? "30000");
 
 export async function djangoFetch(
   path: string,
@@ -15,5 +16,6 @@ export async function djangoFetch(
       ...(options.headers ?? {}),
     },
     cache: "no-store",
+    signal: options.signal ?? AbortSignal.timeout(API_TIMEOUT_MS),
   });
 }

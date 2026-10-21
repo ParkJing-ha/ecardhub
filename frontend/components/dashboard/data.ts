@@ -22,7 +22,9 @@ export const dashboardTemplates = [
 ];
 
 export const packages = [
-  { id: "whatsapp", name: "WhatsApp Card Only", price: 100, desc: "Digital card via WhatsApp with QR code", icon: icons.whatsapp, color: "#22c55e" },
-  { id: "whatsapp-sms", name: "WhatsApp + Normal SMS", price: 200, desc: "Card on WhatsApp plus a plain SMS fallback", icon: icons.sms, color: "#60a5fa" },
-  { id: "full", name: "Full Package", price: 350, desc: "WhatsApp card, SMS, and email notification", icon: icons.send, color: "#E0B863" },
+  { id: "sms", name: "SMS", desc: "Normal SMS with the event text details only.", icon: icons.sms, color: "#60a5fa" },
+  { id: "sms_whatsapp", name: "SMS + WhatsApp", desc: "Card and event information on WhatsApp, plus event text details by SMS.", icon: icons.send, color: "#22c55e" },
+  { id: "whatsapp", name: "WhatsApp only", desc: "Invitation card, template, and event information on WhatsApp.", icon: icons.whatsapp, color: "#25D366" },
+  { id: "email", name: "Email", desc: "Invitation delivered by email only.", icon: icons.send, color: "#a78bfa" },
+  { id: "sms_whatsapp_email", name: "SMS + WhatsApp + Email", desc: "All channels: WhatsApp card, SMS event details, and email invitation.", icon: icons.send, color: "#E0B863" },
 ];

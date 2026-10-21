@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.urls import path
+from .health import readiness
 
 from accounts_app.views import (
     RegisterView,
@@ -21,6 +22,8 @@ from events_app.views import (
     GuestDetailView,
     GuestListCreateView,
     InvitationDispatchView,
+    InvitationDetailView,
+    InvitationGenerateView,
     InvitationListCreateView,
     NotificationLogListView,
     UsherListCreateView,
@@ -29,6 +32,7 @@ from events_app.views import (
 
 
 urlpatterns = [
+    path("health/", readiness, name="readiness"),
     path("admin/", admin.site.urls),
 
     # Authentication
@@ -103,6 +107,18 @@ urlpatterns = [
         "api/events/<int:event_pk>/invitations/",
         InvitationListCreateView.as_view(),
         name="event-invitation-list-create",
+    ),
+
+    path(
+        "api/events/<int:event_pk>/invitations/generate/",
+        InvitationGenerateView.as_view(),
+        name="event-invitation-generate",
+    ),
+
+    path(
+        "api/events/<int:event_pk>/invitations/<int:pk>/",
+        InvitationDetailView.as_view(),
+        name="event-invitation-detail",
     ),
 
     path(

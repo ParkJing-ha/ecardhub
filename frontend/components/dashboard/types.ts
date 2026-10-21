@@ -1,6 +1,7 @@
 export type View =
   | "dashboard"
   | "events"
+  | "cards"
   | "create-event"
   | "templates"
   | "guests"

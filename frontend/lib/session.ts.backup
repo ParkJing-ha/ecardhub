@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { getUserBySession } from "./auth-db";
 
-export const sessionCookieName = "ecardhub_session";
+export const sessionCookieName = "apexecard_session";
 
 export async function getCurrentUser() {
   const cookieStore = await cookies();

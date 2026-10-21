@@ -1,8 +1,14 @@
-# eCardHub — Digital Event Card Platform
+# apexecard — Digital Event Card Platform
 
-eCardHub is a full-stack web application for creating, distributing, and verifying digital invitation and contribution cards. This repository contains a Django backend and a Next.js frontend using the App Router.
+apexecard is a full-stack web application for creating, distributing, and verifying digital invitation and contribution cards. This repository contains a Django backend and a Next.js frontend using the App Router.
 
 **Goals:** quick local developer setup, clear frontend ↔ backend connection, and pragmatic instructions for running both services together.
+
+The separate production runtime is in `docker-compose.production.yml`. See
+[NFR-04 validation](docs/NFR-04.md) for the 1,000-user card-generation benchmark,
+the accepted 500-card/30-second target and recorded local smoke results. That
+capacity still requires staging verification; development-server results do not
+establish production readiness.
 
 **Tech stack**
 
@@ -123,6 +129,5 @@ cd frontend && npm run dev
 
 - 500 errors from the frontend API calls: check backend `ALLOWED_HOSTS`, CORS settings, and that the backend server is running.
 - `sqlite` locked errors: ensure no concurrent process holds the DB (delete `db.sqlite3` only if safe).
-
 
 

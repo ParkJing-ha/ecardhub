@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ApiEvent, Event, EventCategory, EventType } from "../types";
 import { useAppPreferences } from "../../AppPreferencesProvider";
 import { useIsMobile } from "../hooks";
@@ -66,16 +66,34 @@ const initialForm = {
   description: "",
 };
 
-const createEventDraftKey = "ecardhub:create-event-draft";
+const createEventDraftKey = "apexecard:create-event-draft";
 const createEventCategories = EVENT_CATEGORIES.filter(
   (item): item is EventCategory => item !== "All",
 );
+const maxTemplateImageBytes = 2 * 1024 * 1024;
+const templateImageTypes = ["image/png", "image/jpeg", "image/webp"];
+
+type TemplateSource = "system" | "upload";
+interface PendingEventCreation {
+  event: ApiEvent;
+  payload: string;
+}
 
 interface CreateEventDraft {
   step: number;
   category: EventCategory | null;
   template: string | null;
+  templateSource: TemplateSource;
   form: typeof initialForm;
+  pendingEvent: PendingEventCreation | null;
+}
+
+function writeCreateEventDraft(draft: CreateEventDraft) {
+  try {
+    window.localStorage.setItem(createEventDraftKey, JSON.stringify(draft));
+  } catch {
+    // Keep the in-memory draft usable when browser storage is unavailable.
+  }
 }
 
 function readCreateEventDraft(): CreateEventDraft {
@@ -84,7 +102,9 @@ function readCreateEventDraft(): CreateEventDraft {
       step: 1,
       category: null,
       template: null,
+      templateSource: "system",
       form: initialForm,
+      pendingEvent: null,
     };
   }
 
@@ -96,7 +116,9 @@ function readCreateEventDraft(): CreateEventDraft {
         step: 1,
         category: null,
         template: null,
+        templateSource: "system",
         form: initialForm,
+        pendingEvent: null,
       };
     }
 
@@ -114,6 +136,7 @@ function readCreateEventDraft(): CreateEventDraft {
       step: savedStep,
       category: savedCategory,
       template: typeof draft.template === "string" ? draft.template : null,
+      templateSource: draft.templateSource === "upload" ? "upload" : "system",
       form: {
         ...initialForm,
         ...(draft.form ?? {}),
@@ -121,6 +144,13 @@ function readCreateEventDraft(): CreateEventDraft {
           ? draft.form.dressCodeColors
           : initialForm.dressCodeColors,
       },
+      pendingEvent:
+        draft.pendingEvent &&
+        Number.isInteger(draft.pendingEvent.event?.id) &&
+        draft.pendingEvent.event.id > 0 &&
+        typeof draft.pendingEvent.payload === "string"
+          ? draft.pendingEvent
+          : null,
     };
   } catch {
     window.localStorage.removeItem(createEventDraftKey);
@@ -128,7 +158,9 @@ function readCreateEventDraft(): CreateEventDraft {
       step: 1,
       category: null,
       template: null,
+      templateSource: "system",
       form: initialForm,
+      pendingEvent: null,
     };
   }
 }
@@ -168,6 +200,8 @@ export function CreateEventView({
   const [category, setCategory] = useState<EventCategory | null>(null);
 
   const [template, setTemplate] = useState<string | null>(null);
+  const [templateSource, setTemplateSource] = useState<TemplateSource>("system");
+  const [uploadedTemplate, setUploadedTemplate] = useState<Template | null>(null);
   const [dbTemplates, setDbTemplates] = useState<Template[]>([]);
 
   const [form, setForm] = useState(initialForm);
@@ -176,6 +210,9 @@ export function CreateEventView({
   const [done, setDone] = useState(false);
 
   const [isCreating, setIsCreating] = useState(false);
+  const [pendingEvent, setPendingEvent] = useState<PendingEventCreation | null>(null);
+  const pendingEventRef = useRef<PendingEventCreation | null>(null);
+  const createRequestInFlight = useRef(false);
 
   const [error, setError] = useState("");
 
@@ -185,14 +222,16 @@ export function CreateEventView({
         (item) => item.category === category || item.category === "All",
       )
     : templates;
-  const rawSelectedTemplate = templates.find((item) => item.id === template);
-  const selectedTemplate =
+  const rawSystemTemplate = templates.find((item) => item.id === template);
+  const selectedSystemTemplate =
     !category ||
-    !rawSelectedTemplate ||
-    rawSelectedTemplate.category === category ||
-    rawSelectedTemplate.category === "All"
-      ? rawSelectedTemplate
+    !rawSystemTemplate ||
+    rawSystemTemplate.category === category ||
+    rawSystemTemplate.category === "All"
+      ? rawSystemTemplate
       : undefined;
+  const selectedTemplate =
+    templateSource === "upload" ? uploadedTemplate ?? undefined : selectedSystemTemplate;
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -201,7 +240,10 @@ export function CreateEventView({
       setStep(draft.step);
       setCategory(draft.category);
       setTemplate(draft.template);
+      setTemplateSource(draft.templateSource);
       setForm(draft.form);
+      setPendingEvent(draft.pendingEvent);
+      pendingEventRef.current = draft.pendingEvent;
       setDraftRestored(true);
     });
   }, []);
@@ -212,6 +254,7 @@ export function CreateEventView({
     const hasDraftContent =
       Boolean(category) ||
       Boolean(template) ||
+      Boolean(pendingEvent) ||
       Object.entries(form).some(([key, value]) => {
         if (key === "dressCodeColors") return false;
         return Array.isArray(value) ? value.length > 0 : Boolean(value);
@@ -226,11 +269,13 @@ export function CreateEventView({
       step,
       category,
       template,
+      templateSource,
       form,
+      pendingEvent,
     };
 
-    window.localStorage.setItem(createEventDraftKey, JSON.stringify(draft));
-  }, [category, done, draftRestored, form, step, template]);
+    writeCreateEventDraft(draft);
+  }, [category, done, draftRestored, form, pendingEvent, step, template, templateSource]);
 
   useEffect(() => {
     let mounted = true;
@@ -269,7 +314,51 @@ export function CreateEventView({
     return true;
   };
 
+  const handleTemplateUpload = (file: File | undefined) => {
+    if (!file) return;
+
+    if (!templateImageTypes.includes(file.type)) {
+      setError("Please upload a PNG, JPG, or WebP image for your invitation template.");
+      return;
+    }
+
+    if (file.size > maxTemplateImageBytes) {
+      setError("Your template image must be 2 MB or smaller.");
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      setUploadedTemplate({
+        id: "uploaded-template",
+        name: file.name.replace(/\.[^/.]+$/, "") || "My invitation template",
+        category: category || "Custom Ceremony",
+        style: "Custom",
+        primary_color: "#0F172A",
+        accent_color: "#C9A24B",
+        background_color: "#F8FAFC",
+        text_color: "#0F172A",
+        font_family: "Playfair Display",
+        layout: "centered",
+        image_data_url: String(reader.result),
+        is_premium: false,
+        is_custom: true,
+        description: "Uploaded invitation template",
+      });
+      setError("");
+    };
+
+    reader.onerror = () => {
+      setError("We could not read that image. Please choose another file.");
+    };
+
+    reader.readAsDataURL(file);
+  };
+
   const handleCreate = async () => {
+    if (createRequestInFlight.current || done || !draftRestored) return;
+
     if (!category) {
       setError(t(language, "wizard", "selectCategoryError"));
       setStep(1);
@@ -287,70 +376,77 @@ export function CreateEventView({
       return;
     }
 
+    createRequestInFlight.current = true;
     setIsCreating(true);
     setError("");
 
+    let savingDesign = false;
+
     try {
-      const response = await fetch("/api/events", {
-        method: "POST",
-
-        headers: {
-          "Content-Type": "application/json",
-        },
-
-        body: JSON.stringify({
-          title: form.title.trim(),
-
-          event_type: categoryToEventType[category],
-
-          host_family_name: form.hostFamilyName.trim(),
-
-          event_date: form.date,
-
-          event_time: form.eventTime || null,
-
-          venue: form.venue.trim(),
-
-          rsvp_deadline: form.rsvpDeadline || null,
-
-          rsvp_reply_phone: form.rsvpReplyPhone.trim(),
-
-          card_message: form.cardMessage.trim(),
-
-          dress_code_colors: form.dressCodeColors.filter(Boolean),
-
-          description: form.description.trim(),
-
-          status: "draft",
-        }),
+      const payload = JSON.stringify({
+        title: form.title.trim(),
+        event_type: categoryToEventType[category],
+        host_family_name: form.hostFamilyName.trim(),
+        event_date: form.date,
+        event_time: form.eventTime || null,
+        venue: form.venue.trim(),
+        rsvp_deadline: form.rsvpDeadline || null,
+        rsvp_reply_phone: form.rsvpReplyPhone.trim(),
+        card_message: form.cardMessage.trim(),
+        dress_code_colors: form.dressCodeColors.filter(Boolean),
+        description: form.description.trim(),
+        status: "draft",
       });
 
-      const data = await response.json();
+      let savedEvent = pendingEventRef.current;
+      if (!savedEvent || savedEvent.payload !== payload) {
+        const response = await fetch(
+          savedEvent ? `/api/events/${savedEvent.event.id}` : "/api/events",
+          {
+            method: savedEvent ? "PATCH" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: payload,
+          },
+        );
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(
+            data.detail || data.error || Object.values(data).flat().join(" ") ||
+            (savedEvent ? "Unable to update the saved event." : "Unable to create event."),
+          );
+        }
 
-      if (!response.ok) {
-        throw new Error(data.detail || data.error || "Unable to create event.");
+        savedEvent = { event: data as ApiEvent, payload };
+        pendingEventRef.current = savedEvent;
+        setPendingEvent(savedEvent);
+        // Save the event ID before template upload so a reload can safely retry.
+        writeCreateEventDraft({ step, category, template, templateSource, form, pendingEvent: savedEvent });
       }
 
-      if (selectedTemplate) {
-        await createCustomTemplate(String(data.id), selectedTemplate);
-      }
+      savingDesign = true;
+      await createCustomTemplate(String(savedEvent.event.id), selectedTemplate);
+      savingDesign = false;
 
       const createdEvent = apiEventToDashboardEvent(
-        data as ApiEvent,
+        savedEvent.event,
         Number(form.guestCount) || 0,
       );
 
       onCreated(createdEvent);
 
       window.localStorage.removeItem(createEventDraftKey);
+      pendingEventRef.current = null;
+      setPendingEvent(null);
       setDone(true);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Something went wrong while creating the event.",
-      );
+      const detail = err instanceof Error ? err.message : "Something went wrong while saving the event.";
+      setError(pendingEventRef.current
+        ? savingDesign
+          ? `${language === "sw" ? "Event yako imehifadhiwa, lakini design ya kadi haijahifadhiwa. Jaribu tena kukamilisha event hii." : "Your event was saved, but its invitation design could not be saved. Retry to finish saving this same event."} ${detail}`
+          : `${language === "sw" ? "Event yako tayari imehifadhiwa, lakini mabadiliko mapya hayajahifadhiwa. Jaribu tena." : "Your event is already saved, but the latest changes could not be saved. Please retry."} ${detail}`
+        : detail);
     } finally {
+      createRequestInFlight.current = false;
       setIsCreating(false);
     }
   };
@@ -452,6 +548,8 @@ export function CreateEventView({
                 setDone(false);
                 setCategory(null);
                 setTemplate(null);
+                setTemplateSource("system");
+                setUploadedTemplate(null);
                 setError("");
                 setForm(initialForm);
                 window.localStorage.removeItem(createEventDraftKey);
@@ -471,6 +569,8 @@ export function CreateEventView({
                 setDone(false);
                 setCategory(null);
                 setTemplate(null);
+                setTemplateSource("system");
+                setUploadedTemplate(null);
                 setError("");
                 setForm(initialForm);
                 window.localStorage.removeItem(createEventDraftKey);
@@ -624,6 +724,21 @@ export function CreateEventView({
         </div>
       </div>
 
+      {pendingEvent && !isCreating && (
+        <div
+          role="status"
+          className="card-base"
+          style={{ marginBottom: 18, padding: "14px 16px", color: "var(--accent-text)", fontSize: 14, lineHeight: 1.6 }}
+        >
+          {language === "sw"
+            ? "Event hii tayari imehifadhiwa. Kamilisha kuhifadhi design ya kadi; ukijaribu tena mfumo utatumia event hii hii."
+            : "This event is already saved. Finish saving its invitation design; retrying will use this same event."}
+          {templateSource === "upload" && !uploadedTemplate && (language === "sw"
+            ? " Chagua tena picha ya design yako."
+            : " Please select your design image again.")}
+        </div>
+      )}
+
       {error && (
         <div
           style={{
@@ -669,6 +784,8 @@ export function CreateEventView({
                   onClick={() => {
                     setCategory(cat);
                     setTemplate(null);
+                    setTemplateSource("system");
+                    setUploadedTemplate(null);
                     setError("");
                   }}
                   style={{
@@ -982,40 +1099,138 @@ export function CreateEventView({
           />
 
           <div
+            role="group"
+            aria-label="Template source"
             style={{
               display: "grid",
-              gridTemplateColumns: isMobile
-                ? "repeat(2, minmax(0, 1fr))"
-                : "repeat(3, minmax(0, 1fr))",
-              gap: 18,
+              gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))",
+              gap: 12,
+              marginBottom: 22,
             }}
           >
-            {filteredTemplates.length === 0 ? (
-              <div
-                className="card-base"
-                style={{
-                  gridColumn: "1 / -1",
-                  padding: 24,
-                  color: "var(--muted-foreground)",
-                  fontSize: 14,
-                }}
-              >
-                {t(language, "wizard", "noTemplates")}
-              </div>
-            ) : (
-              filteredTemplates.map((item) => (
-                <TemplateCard
-                  key={item.id}
-                  template={item}
-                  selected={template === item.id}
-                  onSelect={(selectedItem) => {
-                    setTemplate(selectedItem.id);
+            {[
+              ["system", "System templates", "Choose a ready-made design for your event."],
+              ["upload", "Upload your own", "Upload an invitation image to use as this event's template."],
+            ].map(([source, title, description]) => {
+              const active = templateSource === source;
+              return (
+                <button
+                  key={source}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => {
+                    setTemplateSource(source as TemplateSource);
                     setError("");
                   }}
-                />
-              ))
-            )}
+                  style={{
+                    border: active ? "2px solid var(--accent)" : "1px solid var(--border)",
+                    borderRadius: 8,
+                    padding: "16px 18px",
+                    background: active ? "color-mix(in srgb, var(--accent) 10%, var(--card))" : "var(--card)",
+                    color: "var(--foreground)",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <div style={{ fontSize: 15, fontWeight: 700 }}>{title}</div>
+                  <div style={{ color: "var(--muted-foreground)", fontSize: 13, marginTop: 4 }}>{description}</div>
+                </button>
+              );
+            })}
           </div>
+
+          {templateSource === "system" ? (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(3, minmax(0, 1fr))",
+                gap: 18,
+              }}
+            >
+              {filteredTemplates.length === 0 ? (
+                <div className="card-base" style={{ gridColumn: "1 / -1", padding: 24, color: "var(--muted-foreground)", fontSize: 14 }}>
+                  {t(language, "wizard", "noTemplates")}
+                </div>
+              ) : (
+                filteredTemplates.map((item) => (
+                  <TemplateCard
+                    key={item.id}
+                    template={item}
+                    selected={template === item.id}
+                    onSelect={(selectedItem) => {
+                      setTemplate(selectedItem.id);
+                      setError("");
+                    }}
+                  />
+                ))
+              )}
+            </div>
+          ) : (
+            <div
+              className="card-base"
+              style={{
+                padding: isMobile ? 18 : 24,
+                display: "grid",
+                gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) minmax(260px, 0.8fr)",
+                gap: 24,
+                alignItems: "start",
+              }}
+            >
+              <div>
+                <label style={{ display: "block", color: "var(--foreground)", fontSize: 14, fontWeight: 700, marginBottom: 8 }}>
+                  Invitation design
+                </label>
+                <input
+                  type="file"
+                  accept={templateImageTypes.join(",")}
+                  onChange={(event) => handleTemplateUpload(event.target.files?.[0])}
+                  style={{ width: "100%", color: "var(--foreground)" }}
+                />
+                <p style={{ color: "var(--muted-foreground)", fontSize: 12, lineHeight: 1.5, margin: "8px 0 20px" }}>
+                  PNG, JPG, or WebP up to 2 MB. Your image is saved as this event&apos;s custom template.
+                </p>
+                <label style={{ display: "block", color: "var(--foreground)", fontSize: 14, fontWeight: 700, marginBottom: 8 }}>
+                  Template name
+                </label>
+                <input
+                  value={uploadedTemplate?.name || ""}
+                  disabled={!uploadedTemplate}
+                  placeholder="My invitation template"
+                  onChange={(event) => {
+                    const name = event.target.value;
+                    setUploadedTemplate((current) => current ? { ...current, name } : current);
+                  }}
+                  style={{ width: "100%", minHeight: 44, padding: "0 12px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--card)", color: "var(--foreground)" }}
+                />
+              </div>
+              <div>
+                <div
+                  style={{
+                    aspectRatio: "4 / 5",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: uploadedTemplate?.image_data_url
+                      ? uploadedTemplate.background_color + " url(" + uploadedTemplate.image_data_url + ") center / cover no-repeat"
+                      : "var(--secondary)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "var(--muted-foreground)",
+                    fontSize: 13,
+                    textAlign: "center",
+                    padding: 20,
+                  }}
+                >
+                  {!uploadedTemplate && "Your uploaded design preview will appear here"}
+                </div>
+                {uploadedTemplate && (
+                  <div style={{ color: "var(--accent-text)", fontSize: 13, fontWeight: 700, marginTop: 10 }}>
+                    Uploaded template selected
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           <ActionBar
             isMobile={isMobile}
@@ -1504,9 +1719,11 @@ export function CreateEventView({
             nextLabel={
               isCreating
                 ? t(language, "wizard", "creatingEvent")
-                : t(language, "wizard", "createEventButton")
+                : pendingEvent
+                  ? language === "sw" ? "Jaribu kuhifadhi design tena" : "Retry saving design"
+                  : t(language, "wizard", "createEventButton")
             }
-            nextDisabled={isCreating}
+            nextDisabled={isCreating || !draftRestored}
             onBack={() => setStep(3)}
             onNext={handleCreate}
           />

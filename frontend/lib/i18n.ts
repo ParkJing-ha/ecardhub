@@ -4,7 +4,7 @@ export type AppTheme = "light" | "dark" | "system";
 export const dictionaries = {
   en: {
     common: {
-      appName: "EcardHub",
+      appName: "apexecard",
       signIn: "Sign In",
       signOut: "Sign Out",
       createAccount: "Create Account",
@@ -174,7 +174,7 @@ export const dictionaries = {
   },
   sw: {
     common: {
-      appName: "EcardHub",
+      appName: "apexecard",
       signIn: "Ingia",
       signOut: "Toka",
       createAccount: "Fungua Akaunti",

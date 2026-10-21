@@ -1,8 +1,10 @@
+name: apexecard
+
 services:
 
   db:
     image: postgres:18
-    container_name: ecardhub_db
+    container_name: apexecard_db
 
     env_file:
       - .env
@@ -25,7 +27,7 @@ services:
     build:
       context: ./backend
 
-    container_name: ecardhub_backend
+    container_name: apexecard_backend
 
     command: python manage.py runserver 0.0.0.0:8000
 
@@ -47,7 +49,7 @@ services:
     build:
       context: ./frontend
 
-    container_name: ecardhub_frontend
+    container_name: apexecard_frontend
 
     command: npm run dev -- --hostname 0.0.0.0
 

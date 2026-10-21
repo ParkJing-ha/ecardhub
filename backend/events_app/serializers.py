@@ -2,6 +2,7 @@ import re
 
 from rest_framework import serializers
 
+from .card_generation import card_snapshot, qr_svg, render_card_svg, svg_data_url
 from .models import (
     AuditLog,
     CardTemplate,
@@ -84,6 +85,10 @@ class EventSerializer(serializers.ModelSerializer):
 
 
 class GuestSerializer(serializers.ModelSerializer):
+    # The name/phone uniqueness constraint makes DRF infer phone as required.
+    # Guests may legitimately omit it; the stored empty string still participates
+    # in the existing per-event duplicate constraint.
+    phone = serializers.CharField(max_length=30, allow_blank=True, required=False, default="")
 
     class Meta:
         model = Guest
@@ -166,6 +171,11 @@ class CardTemplateSerializer(serializers.ModelSerializer):
 
 
 class InvitationSerializer(serializers.ModelSerializer):
+    card_snapshot = serializers.SerializerMethodField()
+    qr_svg = serializers.SerializerMethodField()
+    qr_image_data_url = serializers.SerializerMethodField()
+    card_svg = serializers.SerializerMethodField()
+    has_card_artifact = serializers.SerializerMethodField()
     guest_id = serializers.PrimaryKeyRelatedField(
         source="guest",
         queryset=Guest.objects.all(),
@@ -187,15 +197,57 @@ class InvitationSerializer(serializers.ModelSerializer):
             "status",
             "rsvp_status",
             "customized_text",
+            "card_snapshot",
+            "qr_svg",
+            "qr_image_data_url",
+            "card_svg",
+            "has_card_artifact",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = [
-            "id",
-            "event",
-            "created_at",
-            "updated_at",
-        ]
+
+        read_only_fields = ["id", "event", "created_at", "updated_at"]
+
+    def get_card_snapshot(self, obj):
+        snapshot = card_snapshot(obj)
+        if snapshot and not self.context.get("include_card_artifact", True):
+            design = snapshot["template"]
+            snapshot = {**snapshot, "template": {
+                **design, "image_data_url": "",
+                "image_data_url_available": bool(design.get("image_data_url")),
+            }}
+        return snapshot
+
+    def get_qr_svg(self, obj):
+        return qr_svg(obj.qr_data) if self.context.get("include_card_artifact", True) else ""
+
+    def get_qr_image_data_url(self, obj):
+        return svg_data_url(qr_svg(obj.qr_data)) if obj.qr_data and self.context.get("include_card_artifact", True) else ""
+
+    def get_card_svg(self, obj):
+        return render_card_svg(obj) if self.context.get("include_card_artifact", True) else ""
+
+    def get_has_card_artifact(self, obj):
+        return bool(obj.card_generation_id)
+
+
+class CardGenerationSerializer(serializers.Serializer):
+    guest_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        min_length=1, max_length=100, required=False,
+    )
+    all_guests = serializers.BooleanField(default=False)
+    template_id = serializers.IntegerField(min_value=1, required=False)
+
+    def validate(self, attrs):
+        if bool(attrs.get("guest_ids")) == attrs.get("all_guests", False):
+            raise serializers.ValidationError(
+                "Provide guest_ids or all_guests=true, but not both."
+            )
+        guest_ids = attrs.get("guest_ids", [])
+        if len(set(guest_ids)) != len(guest_ids):
+            raise serializers.ValidationError({"guest_ids": "Select each guest only once."})
+        return attrs
 
 
 class ContributionSerializer(serializers.ModelSerializer):

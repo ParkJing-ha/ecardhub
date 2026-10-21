@@ -29,7 +29,7 @@ export function StatCard({
           fontFamily: "DM Serif Display, serif",
           fontSize: 32,
           lineHeight: 1,
-          color: accent || "var(--accent)",
+          color: accent || "var(--accent-text)",
         }}
       >
         {value}

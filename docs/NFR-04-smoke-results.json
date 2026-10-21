@@ -1,0 +1,72 @@
+{
+  "status": "LOCAL_SMOKE_ONLY_NOT_1000_USER_ACCEPTANCE",
+  "date": "2026-10-10",
+  "workload": {
+    "users": 5,
+    "guests_per_user": 500,
+    "new_cards": 2500,
+    "batch_size": 100,
+    "artifact_per_user": 1,
+    "uploaded_png_bytes": 1441303
+  },
+  "runtime": {
+    "next": "16.3.8",
+    "backend_replicas": 2,
+    "frontend_replicas": 2,
+    "gunicorn_workers_per_replica": 2,
+    "threads_per_worker": 4,
+    "pool_max_per_worker": 4,
+    "postgres": "18",
+    "logical_cpus_shared_with_development": 4
+  },
+  "metrics": {
+    "card_workflow_ms": {
+      "med": 2563,
+      "p(95)": 2671.2,
+      "p(99)": 2678.24,
+      "max": 2680,
+      "avg": 2563
+    },
+    "card_batch_ms": {
+      "p(95)": 474.68059379999994,
+      "p(99)": 490.72013572,
+      "max": 494.508739,
+      "avg": 311.9844395999999,
+      "med": 281.926228
+    },
+    "card_artifact_ms": {
+      "med": 700.177626,
+      "p(95)": 932.2897674,
+      "p(99)": 950.6898814799999,
+      "max": 955.28991,
+      "avg": 723.5202665999999
+    },
+    "card_workflow_failed": {
+      "rate": 0,
+      "sample_count": 5
+    },
+    "card_workflows_completed": {
+      "count": 5,
+      "rate": 1.8636931979431095
+    },
+    "cards_created": {
+      "count": 2500,
+      "rate": 931.8465989715547
+    },
+    "http_req_failed": {
+      "rate": 0,
+      "sample_count": 30
+    },
+    "checks": {
+      "rate": 1,
+      "passes": 55,
+      "fails": 0
+    }
+  },
+  "limitations": [
+    "Only 5 users tested in this smoke run; the subsequent local 1000-user burst failed (see NFR-04-local-burst-results.json). Dedicated production and sustained/soak tests remain pending.",
+    "Server and load generator shared the development workstation.",
+    "One full SVG/QR artifact per user; remaining artifacts render on demand.",
+    "These are measurements of the isolated test runtime, not a public production deployment."
+  ]
+}

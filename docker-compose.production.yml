@@ -1,0 +1,89 @@
+# Separate project/volume from docker-compose.yml; never use this for development.
+name: apexecard-production
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-apexecard}
+      POSTGRES_USER: ${POSTGRES_USER:-apexecard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the production env file}
+    volumes:
+      - production_db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.production
+    restart: unless-stopped
+    environment:
+      DJANGO_PRODUCTION: "true"
+      DJANGO_DEBUG: "false"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set a strong production DJANGO_SECRET_KEY}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?Set the deployment hosts plus backend and 127.0.0.1}
+      DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:-http://localhost:8080}
+      DJANGO_TRUST_PROXY: "true"
+      DJANGO_SECURE_SSL_REDIRECT: ${DJANGO_SECURE_SSL_REDIRECT:-false}
+      DJANGO_SECURE_HSTS_SECONDS: ${DJANGO_SECURE_HSTS_SECONDS:-0}
+      POSTGRES_DB: ${POSTGRES_DB:-apexecard}
+      POSTGRES_USER: ${POSTGRES_USER:-apexecard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_HOST: db
+      DJANGO_DB_POOL: "true"
+      DJANGO_DB_POOL_MIN: ${DJANGO_DB_POOL_MIN:-1}
+      DJANGO_DB_POOL_MAX: ${DJANGO_DB_POOL_MAX:-4}
+      DJANGO_DB_POOL_TIMEOUT: ${DJANGO_DB_POOL_TIMEOUT:-5}
+      DJANGO_DB_POOL_MAX_WAITING: ${DJANGO_DB_POOL_MAX_WAITING:-16}
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
+      GUNICORN_THREADS: ${GUNICORN_THREADS:-4}
+      APEXECARD_LOAD_TEST_FIXTURES: ${APEXECARD_LOAD_TEST_FIXTURES:-false}
+    volumes:
+      - production_static:/app/staticfiles
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/', timeout=5)"]
+      interval: 15s
+      timeout: 6s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.production
+    restart: unless-stopped
+    environment:
+      DJANGO_API_URL: http://backend:8000
+      DJANGO_API_TIMEOUT_MS: "30000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 6s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  proxy:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    ports:
+      - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8080}:8080"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - production_static:/srv/static:ro
+    depends_on:
+      frontend:
+        condition: service_healthy
+
+volumes:
+  production_db:
+  production_static:

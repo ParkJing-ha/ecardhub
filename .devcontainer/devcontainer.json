@@ -1,5 +1,5 @@
 {
-  "name": "Ecardhub Workspace",
+  "name": "apexecard Workspace",
   "dockerComposeFile": "../docker-compose.yml",
   "service": "backend",
   "workspaceFolder": "/app",

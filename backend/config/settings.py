@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from pathlib import Path
 from datetime import timedelta
 import os
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -29,6 +30,10 @@ def env_list(name, default=""):
     ]
 
 
+def env_bool(name, default=False):
+    return os.getenv(name, str(default)).lower() in {"1", "true", "yes"}
+
+
 # SECURITY WARNING: keep the secret key used in production secret.
 SECRET_KEY = os.getenv(
     "DJANGO_SECRET_KEY",
@@ -42,6 +47,17 @@ ALLOWED_HOSTS = env_list(
     "DJANGO_ALLOWED_HOSTS",
     "localhost,127.0.0.1,backend",
 )
+
+PRODUCTION = env_bool("DJANGO_PRODUCTION")
+if PRODUCTION:
+    if DEBUG:
+        raise ImproperlyConfigured("DJANGO_DEBUG must be false in production.")
+    if len(SECRET_KEY) < 50 or len(set(SECRET_KEY)) < 5 or SECRET_KEY.startswith("django-insecure-"):
+        raise ImproperlyConfigured("Set a strong DJANGO_SECRET_KEY for production.")
+    if not ALLOWED_HOSTS or "*" in ALLOWED_HOSTS:
+        raise ImproperlyConfigured("Set explicit DJANGO_ALLOWED_HOSTS for production.")
+    if not os.getenv("POSTGRES_PASSWORD"):
+        raise ImproperlyConfigured("Set POSTGRES_PASSWORD for production.")
 
 
 # Application definition
@@ -108,8 +124,21 @@ DATABASES = {
         "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
         "HOST": os.getenv("POSTGRES_HOST", "db"),
         "PORT": os.getenv("POSTGRES_PORT", "5432"),
+        "CONN_MAX_AGE": 0,
+        "CONN_HEALTH_CHECKS": True,
+        "OPTIONS": {"connect_timeout": 5},
     }
 }
+
+# Each Gunicorn process owns its pool. Budget replicas × workers × max_size
+# against PostgreSQL's connection limit, leaving room for migrations and admin.
+if env_bool("DJANGO_DB_POOL"):
+    DATABASES["default"]["OPTIONS"]["pool"] = {
+        "min_size": int(os.getenv("DJANGO_DB_POOL_MIN", "1")),
+        "max_size": int(os.getenv("DJANGO_DB_POOL_MAX", "4")),
+        "timeout": float(os.getenv("DJANGO_DB_POOL_TIMEOUT", "5")),
+        "max_waiting": int(os.getenv("DJANGO_DB_POOL_MAX_WAITING", "16")),
+    }
 
 
 
@@ -167,6 +196,11 @@ MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Enable only behind the private proxy, which replaces this header itself.
+if env_bool("DJANGO_TRUST_PROXY"):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # Rest Framework settings to use JWT authentication
 REST_FRAMEWORK = {
@@ -198,6 +232,7 @@ SECURE_SSL_REDIRECT = os.getenv("DJANGO_SECURE_SSL_REDIRECT", "False").lower() i
     "true",
     "yes",
 }
+SECURE_REDIRECT_EXEMPT = [r"^health/$"]
 SECURE_HSTS_SECONDS = int(os.getenv("DJANGO_SECURE_HSTS_SECONDS", "0"))
 SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0
 SECURE_HSTS_PRELOAD = SECURE_HSTS_SECONDS > 0

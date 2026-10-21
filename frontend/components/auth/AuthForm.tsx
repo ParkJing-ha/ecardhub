@@ -129,7 +129,7 @@ export default function AuthForm() {
           href="/"
           className="flex items-center gap-3"
           style={{ textDecoration: "none" }}
-          aria-label="Go to EcardHub home page"
+          aria-label="Go to apexecard home page"
         >
           <BrandLogo size={34} />
           <span
@@ -194,7 +194,7 @@ export default function AuthForm() {
             href="/"
             className="flex items-center gap-2 mb-8 lg:hidden"
             style={{ textDecoration: "none" }}
-            aria-label="Go to EcardHub home page"
+            aria-label="Go to apexecard home page"
           >
             <BrandLogo size={30} />
             <span

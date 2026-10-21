@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { PublicUser } from "../../utils/types";
 import type { AppLanguage, AppTheme } from "@/lib/i18n";
 import { BrandLogo } from "@/components/BrandLogo";
@@ -18,6 +19,7 @@ const NAV_ITEMS: {
 }[] = [
   { view: "dashboard", label: "Dashboard", labelSw: "Dashibodi", icon: icons.dashboard },
   { view: "events", label: "My Events", labelSw: "Matukio Yangu", icon: icons.events },
+  { view: "cards", label: "Card Management", labelSw: "Usimamizi wa Kadi", icon: icons.templates },
   { view: "create-event", label: "Create Event", labelSw: "Tengeneza Tukio", icon: icons.create },
   { view: "templates", label: "Templates", labelSw: "Miundo ya Kadi", icon: icons.templates },
   { view: "guests", label: "Guest List", labelSw: "Orodha ya Wageni", icon: icons.guests },
@@ -117,9 +119,11 @@ export function Sidebar({
   showAccount?: boolean;
   onNavigate?: () => void;
 }) {
+  const router = useRouter();
   const logout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/auth";
+    router.replace("/auth");
+    router.refresh();
   };
 
   return (
@@ -153,7 +157,7 @@ export function Sidebar({
                 lineHeight: 1.1,
               }}
             >
-              EcardHub
+              apexecard
             </div>
             <div
               style={{
@@ -322,9 +326,11 @@ export function Header({
   onThemeChange: (theme: DashboardTheme) => void;
   onOpenMenu?: () => void;
 }) {
+  const router = useRouter();
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement | null>(null);
   const labels: Record<View, { en: string; sw: string }> = {
+    cards: { en: "Card Management", sw: "Usimamizi wa Kadi" },
     dashboard: { en: "Overview", sw: "Muhtasari" },
     events: { en: "My Events", sw: "Matukio Yangu" },
     "create-event": { en: "Create Event", sw: "Tengeneza Tukio" },
@@ -361,7 +367,8 @@ export function Header({
 
   const logout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/auth";
+    router.replace("/auth");
+    router.refresh();
   };
 
   return (

@@ -8,7 +8,7 @@ interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   guest: Guest | null;
-  onSave: (form: Partial<Guest>) => void;
+  onSave: (form: Partial<Guest>) => void | Promise<void>;
 }
 
 export default function GuestDialog({
@@ -17,6 +17,8 @@ export default function GuestDialog({
   guest,
   onSave,
 }: Props) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const [form, setForm] = useState<Partial<Guest>>({
     full_name: "",
     phone: "",
@@ -28,6 +30,7 @@ export default function GuestDialog({
   useEffect(() => {
     if (open) {
       queueMicrotask(() => {
+        setError("");
         setForm(
           guest
             ? {
@@ -65,12 +68,22 @@ export default function GuestDialog({
         </div>
         <form
           id="guest-form"
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            onSave(form);
+            if (saving) return;
+            setSaving(true);
+            setError("");
+            try {
+              await onSave(form);
+            } catch (failure) {
+              setError(failure instanceof Error ? failure.message : "Unable to save this guest.");
+            } finally {
+              setSaving(false);
+            }
           }}
           className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6"
         >
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <div className="space-y-1.5">
             <label className="text-sm font-medium">Full name *</label>
             <input
@@ -91,8 +104,11 @@ export default function GuestDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Email</label>
+              <label htmlFor="guest-email" className="text-sm font-medium">
+                Email <span className="font-normal text-muted-foreground">(optional)</span>
+              </label>
               <input
+                id="guest-email"
                 type="email"
                 className="min-h-11 w-full rounded-md border border-border bg-transparent px-3"
                 value={form.email || ""}
@@ -115,8 +131,11 @@ export default function GuestDialog({
             </select>
           </div>
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">Notes</label>
+            <label htmlFor="guest-notes" className="text-sm font-medium">
+              Notes <span className="font-normal text-muted-foreground">(optional)</span>
+            </label>
             <textarea
+              id="guest-notes"
               rows={2}
               className="w-full rounded-md border border-border bg-transparent p-2"
               value={form.notes || ""}
@@ -134,10 +153,11 @@ export default function GuestDialog({
           </button>
           <button
             type="submit"
+            disabled={saving}
             form="guest-form"
             className="min-h-11 rounded-md bg-primary px-4 text-primary-foreground"
           >
-            {guest ? "Save changes" : "Add guest"}
+            {saving ? "Saving…" : guest ? "Save changes" : "Add guest"}
           </button>
         </div>
       </div>

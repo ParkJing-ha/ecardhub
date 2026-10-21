@@ -6,6 +6,9 @@ venv/
 .venv/
 
 .env
+.env.*
+staticfiles/
+media/
 
 .git/
 .gitignore

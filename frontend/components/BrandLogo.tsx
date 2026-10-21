@@ -10,7 +10,7 @@ export function BrandLogo({
   return (
     <Image
       src="/logo/icon-gold-navy.svg"
-      alt="EcardHub logo"
+      alt="apexecard logo"
       width={size}
       height={size}
       className={className}
